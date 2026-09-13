@@ -7,6 +7,7 @@ import cv2
 from vehicle_tracker.config import Config
 from vehicle_tracker.detector import VehicleDetector
 from vehicle_tracker.overlay import draw_detections
+from vehicle_tracker.tracks import TrackRegistry
 from vehicle_tracker.video_source import VideoSource
 
 logger = logging.getLogger(__name__)
@@ -23,10 +24,13 @@ def run(config: Config) -> None:
         image_size=config.image_size,
     )
 
+    registry = TrackRegistry()
+
     with VideoSource(config.source) as source:
-        for frame in source:
+        for frame_index, frame in enumerate(source):
             detections = detector.track(frame)
-            draw_detections(frame, detections)
+            states = registry.update(frame_index, frame, detections)
+            draw_detections(frame, detections, states)
             cv2.imshow(WINDOW_NAME, frame)
             if cv2.waitKey(1) & 0xFF in QUIT_KEYS:
                 logger.info("stopped by user")
