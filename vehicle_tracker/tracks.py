@@ -84,6 +84,11 @@ class TrackState:
         return max(self.plate_votes.values())
 
 
+def carries_a_plate(states: dict[int, TrackState]) -> bool:
+    """Whether this frame shows a vehicle whose plate is known."""
+    return any(state.plate is not None for state in states.values())
+
+
 def newly_confirmed(states: dict[int, TrackState]) -> list[TrackState]:
     """Vehicles whose plate has just been confirmed, each one returned only once."""
     confirmed = []

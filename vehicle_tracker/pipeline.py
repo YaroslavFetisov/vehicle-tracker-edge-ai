@@ -12,7 +12,7 @@ from vehicle_tracker.detector import VehicleDetector
 from vehicle_tracker.metrics import Metrics
 from vehicle_tracker.overlay import draw_detections, draw_status
 from vehicle_tracker.plate_reader import PlateReader
-from vehicle_tracker.tracks import TrackRegistry, TrackState, newly_confirmed
+from vehicle_tracker.tracks import TrackRegistry, TrackState, carries_a_plate, newly_confirmed
 from vehicle_tracker.video_source import VideoSource
 from vehicle_tracker.video_writer import VideoWriter
 
@@ -87,6 +87,7 @@ def run(config: Config) -> None:
     registry = TrackRegistry()
     pipeline = build_pipeline(config, registry=registry, metrics=metrics)
     writer = None
+    kept = 0
 
     try:
         with VideoSource(config.source) as source:
@@ -97,11 +98,15 @@ def run(config: Config) -> None:
                 states = pipeline.process(frame_index, frame)
                 report(states)
 
-                draw_status(frame, metrics.status_line())
-                if writer is not None:
-                    writer.write(frame)
-                if config.display:
-                    cv2.imshow(WINDOW_NAME, frame)
+                # the optional stream filter: a frame that carries no vehicle with a
+                # readable plate is analysed but never shown or stored
+                if not config.filter_stream or carries_a_plate(states):
+                    kept += 1
+                    draw_status(frame, metrics.status_line())
+                    if writer is not None:
+                        writer.write(frame)
+                    if config.display:
+                        cv2.imshow(WINDOW_NAME, frame)
                 metrics.frame_done(time.perf_counter() - frame_started, had_vehicles=bool(states))
 
                 if config.display and cv2.waitKey(1) & 0xFF in QUIT_KEYS:
@@ -118,6 +123,8 @@ def run(config: Config) -> None:
         if config.display:
             cv2.destroyAllWindows()
         logger.info("tracks seen: %d", registry.total_tracks)
+        if config.filter_stream:
+            logger.info("frames kept by the filter: %d of %d", kept, metrics.frames)
         for line in metrics.summary():
             logger.info("%s", line)
 

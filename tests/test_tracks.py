@@ -4,7 +4,7 @@ import numpy as np
 
 from vehicle_tracker.detection import Detection
 from vehicle_tracker.plate import PlateReading
-from vehicle_tracker.tracks import TrackRegistry, newly_confirmed
+from vehicle_tracker.tracks import TrackRegistry, carries_a_plate, newly_confirmed
 
 FRAME_SIZE = 200
 BBOX = (40, 40, 160, 160)
@@ -294,6 +294,27 @@ def test_a_confirmed_plate_is_reported_once_and_not_again():
 
     assert [state.track_id for state in newly_confirmed(states)] == [1]
     assert newly_confirmed(states) == []
+
+
+def test_a_frame_with_a_known_plate_passes_the_stream_filter():
+    registry = TrackRegistry(min_plate_score=2.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(3):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+    states = registry.update(3, solid_frame(RED), [detection()])
+
+    assert carries_a_plate(states)
+
+
+def test_a_frame_with_vehicles_but_no_plate_does_not_pass_the_stream_filter():
+    registry = TrackRegistry(min_plate_score=2.0)
+    states = registry.update(0, solid_frame(RED), [detection()])
+
+    assert not carries_a_plate(states)
+
+
+def test_an_empty_frame_does_not_pass_the_stream_filter():
+    assert not carries_a_plate({})
 
 
 def test_a_vehicle_without_a_settled_plate_is_not_reported():

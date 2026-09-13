@@ -57,3 +57,13 @@ def test_display_can_be_turned_off():
 def test_output_file_is_optional_and_kept_as_a_path():
     config = parse_args(["--source", "rtsp://cam/stream", "--save-video", "out/run.mp4"])
     assert config.output == Path("out/run.mp4")
+
+
+def test_every_frame_is_kept_unless_the_filter_is_asked_for():
+    config = parse_args(["--source", "rtsp://cam/stream"])
+    assert not config.filter_stream
+
+
+def test_the_stream_filter_can_be_turned_on():
+    config = parse_args(["--source", "rtsp://cam/stream", "--filter-stream"])
+    assert config.filter_stream

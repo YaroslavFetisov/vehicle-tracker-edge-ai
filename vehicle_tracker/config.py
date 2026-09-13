@@ -23,6 +23,7 @@ class Config:
     image_size: int
     display: bool = True
     output: Path | None = None
+    filter_stream: bool = False
 
 
 def parse_source(value: str) -> str | int:
@@ -83,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="write the annotated video to this file",
     )
+    parser.add_argument(
+        "--filter-stream",
+        action="store_true",
+        help="only show and save frames that carry a vehicle with a readable plate",
+    )
     return parser
 
 
@@ -96,4 +102,5 @@ def parse_args(argv: Sequence[str] | None = None) -> Config:
         image_size=args.imgsz,
         display=not args.no_display,
         output=args.save_video,
+        filter_stream=args.filter_stream,
     )
