@@ -12,7 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -r requirements-dev.txt
+      # the unit tests exercise the pure modules only, so the ML stack is skipped here;
+      # opencv comes in its headless flavour because the runner has no display libraries
+      - run: pip install -r requirements-dev.txt numpy==2.5.2 opencv-python-headless==5.0.0.93
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -m "not integration"
