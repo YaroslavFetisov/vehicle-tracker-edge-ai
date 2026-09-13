@@ -1,0 +1,10 @@
+# CPU wheels by default. For NVIDIA GPUs install torch from the CUDA index first:
+#   pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu130
+torch==2.13.0
+torchvision==0.28.0
+ultralytics==8.4.150
+opencv-python==5.0.0.93
+numpy==2.5.2
+onnxruntime==1.30.0
+fast-plate-ocr==1.1.0
+open-image-models==0.6.0

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# model weights and sample footage are downloaded, not versioned
+weights/
+data/
+
+.idea/
+.vscode/
+
+TASK.md
