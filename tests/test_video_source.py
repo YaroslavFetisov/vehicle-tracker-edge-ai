@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from vehicle_tracker.video_source import VideoSource, is_stream
+from vehicle_tracker.video_source import VideoSource, is_network_source, is_stream
 
 FRAME_COUNT = 12
 FRAME_WIDTH = 64
@@ -64,3 +64,14 @@ def test_live_sources_are_recognised(source):
 
 def test_file_path_is_not_a_live_source():
     assert not is_stream("data/highway_traffic.mp4")
+
+
+@pytest.mark.parametrize("source", ["rtsp://camera/stream", "http://camera/stream"])
+def test_urls_are_opened_through_the_backend_that_takes_timeouts(source):
+    assert is_network_source(source)
+
+
+@pytest.mark.parametrize("source", [0, "data/highway_traffic.mp4"])
+def test_a_webcam_or_a_file_is_not_a_network_source(source):
+    # neither goes through ffmpeg, and neither can stall the way a camera does
+    assert not is_network_source(source)

@@ -88,10 +88,10 @@ def run(config: Config) -> None:
     pipeline = build_pipeline(config, registry=registry, metrics=metrics)
     writer = None
 
-    with VideoSource(config.source) as source:
-        if config.output is not None:
-            writer = VideoWriter(config.output, source.fps)
-        try:
+    try:
+        with VideoSource(config.source) as source:
+            if config.output is not None:
+                writer = VideoWriter(config.output, source.fps)
             for frame_index, frame in enumerate(source):
                 frame_started = time.perf_counter()
                 states = pipeline.process(frame_index, frame)
@@ -107,18 +107,19 @@ def run(config: Config) -> None:
                 if config.display and cv2.waitKey(1) & 0xFF in QUIT_KEYS:
                     logger.info("stopped by user")
                     break
-        except KeyboardInterrupt:
-            # the usual way to stop a container, and the output file still has to be closed
-            logger.info("interrupted")
-        finally:
-            if writer is not None:
-                writer.close()
-
-    if config.display:
-        cv2.destroyAllWindows()
-    logger.info("vehicles seen: %d", registry.total_tracks)
-    for line in metrics.summary():
-        logger.info("%s", line)
+    except KeyboardInterrupt:
+        # the usual way to stop a container, and the output file still has to be closed
+        logger.info("interrupted")
+    finally:
+        # also runs when the stream is lost for good, so a failed run still reports what it
+        # saw and leaves a playable file behind rather than only a stack trace
+        if writer is not None:
+            writer.close()
+        if config.display:
+            cv2.destroyAllWindows()
+        logger.info("tracks seen: %d", registry.total_tracks)
+        for line in metrics.summary():
+            logger.info("%s", line)
 
 
 def report(states: dict[int, TrackState]) -> None:

@@ -17,11 +17,23 @@ MAX_RECONNECT_DELAY = 8.0
 MAX_RECONNECT_ATTEMPTS = 5
 WAIT_TIMEOUT = 0.1
 
+# A camera that stops sending has to be noticed in seconds rather than whenever the backend
+# decides to give up on its own: measured against a real rtsp source, the default took eight
+# seconds to report a dead stream, and a connection that stalls without closing can take far
+# longer than that.
+OPEN_TIMEOUT_MS = 5000
+READ_TIMEOUT_MS = 5000
+
 
 def is_stream(source: str | int) -> bool:
     if isinstance(source, int):
         return True
     return source.startswith(STREAM_SCHEMES)
+
+
+def is_network_source(source: str | int) -> bool:
+    """A url the ffmpeg backend handles, as opposed to a webcam index or a file."""
+    return isinstance(source, str) and source.startswith(STREAM_SCHEMES)
 
 
 class VideoSource:
@@ -92,7 +104,19 @@ class VideoSource:
             raise self._failure
 
     def _open(self) -> cv2.VideoCapture:
-        capture = cv2.VideoCapture(self._source)
+        if is_network_source(self._source):
+            capture = cv2.VideoCapture(
+                self._source,
+                cv2.CAP_FFMPEG,
+                [
+                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,
+                    OPEN_TIMEOUT_MS,
+                    cv2.CAP_PROP_READ_TIMEOUT_MSEC,
+                    READ_TIMEOUT_MS,
+                ],
+            )
+        else:
+            capture = cv2.VideoCapture(self._source)
         if not capture.isOpened():
             raise RuntimeError(f"cannot open video source: {self._source}")
         # advisory only, most backends ignore it - hence the explicit dropping below
