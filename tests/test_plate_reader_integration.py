@@ -21,6 +21,7 @@ def test_the_known_plate_is_read_from_the_sample_clip():
 
     # imported here so that the unit test run does not need the ML stack installed
     from vehicle_tracker.detector import VehicleDetector
+    from vehicle_tracker.pipeline import read_plates
     from vehicle_tracker.plate_reader import PlateReader
     from vehicle_tracker.tracks import TrackRegistry
 
@@ -37,10 +38,7 @@ def test_the_known_plate_is_read_from_the_sample_clip():
                 break
             detections = detector.track(frame)
             states = registry.update(frame_index, frame, detections)
-            for detection in registry.due_for_plate(frame_index, detections):
-                x1, y1, x2, y2 = detection.bbox
-                crop = frame[max(y1, 0) : y2, max(x1, 0) : x2]
-                registry.record_plate(detection.track_id, frame_index, plate_reader.read(crop))
+            read_plates(frame, frame_index, detections, registry, plate_reader)
             plates.update(state.plate for state in states.values() if state.plate is not None)
     finally:
         capture.release()

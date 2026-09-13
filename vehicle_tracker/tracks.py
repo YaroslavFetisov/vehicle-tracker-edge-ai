@@ -31,12 +31,12 @@ PLATE_CONFIDENT_SCORE = 5.0
 class TrackState:
     track_id: int
     last_seen: int
+    min_plate_score: float
     color_votes: Counter[VehicleColor] = field(default_factory=Counter)
     last_color_frame: int | None = None
     plate_votes: dict[str, float] = field(default_factory=dict)
     last_plate_frame: int | None = None
     plate_attempts: int = 0
-    min_plate_score: float = MIN_REPORTED_PLATE_SCORE
 
     @property
     def color(self) -> VehicleColor | None:

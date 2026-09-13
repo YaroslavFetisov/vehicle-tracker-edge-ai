@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 UKRAINIAN_FORMAT = re.compile(r"^[A-Z]{2}\d{4}[A-Z]{2}$")
 NON_PLATE_CHARACTERS = re.compile(r"[^A-Z0-9]")
+LETTER = re.compile(r"[A-Z]")
+DIGIT = re.compile(r"\d")
 
 MIN_PLATE_LENGTH = 4
 MAX_PLATE_LENGTH = 10
@@ -18,13 +20,16 @@ FOREIGN_FORMAT_WEIGHT = 1.0
 @dataclass(frozen=True)
 class PlateReading:
     text: str
-    detection_confidence: float
     ocr_confidence: float
 
 
 def normalize(text: str) -> str | None:
     cleaned = NON_PLATE_CHARACTERS.sub("", text.upper())
     if not MIN_PLATE_LENGTH <= len(cleaned) <= MAX_PLATE_LENGTH:
+        return None
+    # Plates in the target region mix letters and digits. A run of one kind is the
+    # recognizer hallucinating on a badge or a dealer frame rather than reading a plate.
+    if not (LETTER.search(cleaned) and DIGIT.search(cleaned)):
         return None
     return cleaned
 

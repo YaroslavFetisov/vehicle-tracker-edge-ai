@@ -19,8 +19,13 @@ def test_readings_are_normalised(raw, expected):
     assert normalize(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["", "AB", "A1", "ABCDEFGHIJK", "!!!"])
+@pytest.mark.parametrize("raw", ["", "AB", "A1", "AB12345678C", "!!!"])
 def test_implausible_readings_are_rejected(raw):
+    assert normalize(raw) is None
+
+
+@pytest.mark.parametrize("raw", ["AAAAAAAA", "12345678"])
+def test_readings_without_both_letters_and_digits_are_rejected(raw):
     assert normalize(raw) is None
 
 
@@ -28,7 +33,7 @@ def test_local_format_is_recognised():
     assert looks_local("AA1234BB")
 
 
-@pytest.mark.parametrize("text", ["CF5775", "AA123BB", "1234ABCD", "AAAAAAAA"])
+@pytest.mark.parametrize("text", ["CF5775", "AA123BB", "1234ABCD"])
 def test_other_formats_are_not_local(text):
     assert not looks_local(text)
 

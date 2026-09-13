@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -60,8 +61,20 @@ def fetch_detection_weights() -> None:
     print(f"{DETECTION_MODEL}: {target.stat().st_size / 1e6:.1f} MB")
 
 
+def fetch_plate_models() -> None:
+    # the plate detector and the recognizer pull their own weights from a model hub on
+    # first use, which would otherwise happen on an edge device that is already offline
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from vehicle_tracker.plate_reader import PlateReader
+
+    print("plate models: downloading if missing")
+    PlateReader(device="cpu")
+    print("plate models: ready")
+
+
 def main() -> None:
     fetch_detection_weights()
+    fetch_plate_models()
     for name, url in SAMPLE_VIDEOS.items():
         download(url, DATA_DIR / name)
 

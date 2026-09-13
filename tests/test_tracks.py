@@ -74,7 +74,7 @@ def test_state_without_samples_reports_no_color():
 
 
 def reading(text: str, confidence: float = 0.9) -> PlateReading:
-    return PlateReading(text=text, detection_confidence=0.9, ocr_confidence=confidence)
+    return PlateReading(text=text, ocr_confidence=confidence)
 
 
 def test_large_vehicles_are_queued_for_plate_reading():

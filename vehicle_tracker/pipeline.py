@@ -27,7 +27,7 @@ def run(config: Config) -> None:
         image_size=config.image_size,
     )
 
-    plate_reader = PlateReader()
+    plate_reader = PlateReader(device=config.device)
     registry = TrackRegistry()
 
     with VideoSource(config.source) as source:
@@ -52,6 +52,18 @@ def read_plates(
     plate_reader: PlateReader,
 ) -> None:
     for detection in registry.due_for_plate(frame_index, detections):
-        x1, y1, x2, y2 = detection.bbox
-        crop = frame[max(y1, 0) : y2, max(x1, 0) : x2]
-        registry.record_plate(detection.track_id, frame_index, plate_reader.read(crop))
+        crop = crop_vehicle(frame, detection.bbox)
+        reading = None if crop is None else plate_reader.read(crop)
+        registry.record_plate(detection.track_id, frame_index, reading)
+
+
+def crop_vehicle(frame: np.ndarray, bbox: tuple[int, int, int, int]) -> np.ndarray | None:
+    frame_height, frame_width = frame.shape[:2]
+    x1, y1, x2, y2 = bbox
+    # a tracker can predict a box that has left the frame, and a negative slice bound
+    # would wrap around to the opposite edge instead of yielding nothing
+    left, top = max(x1, 0), max(y1, 0)
+    right, bottom = min(x2, frame_width), min(y2, frame_height)
+    if right <= left or bottom <= top:
+        return None
+    return frame[top:bottom, left:right]

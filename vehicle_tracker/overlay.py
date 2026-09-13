@@ -60,15 +60,13 @@ def draw_label(
 ) -> None:
     x, y = anchor
     (text_width, text_height), _ = cv2.getTextSize(text, FONT, FONT_SCALE, FONT_THICKNESS)
+    box_width = text_width + 2 * LABEL_PADDING
     box_height = text_height + 2 * LABEL_PADDING
+    # a label is wider than the box of a vehicle at the edge of the frame, and the plate
+    # is at the end of it, so the label slides inwards rather than being clipped away
+    x = max(min(x, frame.shape[1] - box_width), 0)
     top = max(y - box_height, 0)
-    cv2.rectangle(
-        frame,
-        (x, top),
-        (x + text_width + 2 * LABEL_PADDING, top + box_height),
-        background,
-        cv2.FILLED,
-    )
+    cv2.rectangle(frame, (x, top), (x + box_width, top + box_height), background, cv2.FILLED)
     cv2.putText(
         frame,
         text,
