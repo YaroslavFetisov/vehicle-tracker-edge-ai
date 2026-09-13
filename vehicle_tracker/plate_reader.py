@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import cv2
@@ -10,6 +11,7 @@ from fast_plate_ocr import LicensePlateRecognizer
 from open_image_models import create_detector
 
 from vehicle_tracker.plate import PlateReading, normalize
+from vehicle_tracker.runtime import plate_model_threads, providers_for
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +34,10 @@ ONNX_ERROR_SEVERITY = 3
 NEUTRAL_OCR_CONFIDENCE = 1.0
 
 
-def providers_for(device: str) -> list[str] | None:
-    if device == "cuda":
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    if device == "cpu":
-        return ["CPUExecutionProvider"]
-    return None
+def session_options() -> onnxruntime.SessionOptions:
+    options = onnxruntime.SessionOptions()
+    options.intra_op_num_threads = plate_model_threads(os.cpu_count())
+    return options
 
 
 class PlateReader:
@@ -50,10 +50,21 @@ class PlateReader:
             and "CUDAExecutionProvider" not in onnxruntime.get_available_providers()
         ):
             logger.warning("no CUDA execution provider available, plate models run on the CPU")
-        self._detector = create_detector(DETECTION_MODEL, providers=providers_for(device))
-        self._recognizer = LicensePlateRecognizer(hub_ocr_model=OCR_MODEL, device=device)
+        options = session_options()
+        self._detector = create_detector(
+            DETECTION_MODEL, providers=providers_for(device), sess_options=options
+        )
+        self._recognizer = LicensePlateRecognizer(
+            hub_ocr_model=OCR_MODEL, device=device, sess_options=options
+        )
         self._expects_grayscale = self._recognizer.config.image_color_mode == "grayscale"
-        logger.info("plate reader: %s + %s on %s", DETECTION_MODEL, OCR_MODEL, device)
+        logger.info(
+            "plate reader: %s + %s on %s, %d threads each",
+            DETECTION_MODEL,
+            OCR_MODEL,
+            device,
+            options.intra_op_num_threads,
+        )
 
     def read(self, vehicle_crop: np.ndarray) -> PlateReading | None:
         plate_crop = self._locate(vehicle_crop)
