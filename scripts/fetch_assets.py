@@ -105,20 +105,34 @@ def fetch_ocr_benchmark() -> None:
     print(f"ocr benchmark: ready in {OCR_BENCHMARK_DIR}")
 
 
+TARGETS = ("models", "videos", "ocr-benchmark")
+DEFAULT_TARGETS = ("models", "videos")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="fetch-assets", description=__doc__)
     parser.add_argument(
-        "--ocr-benchmark",
-        action="store_true",
-        help="also download the labelled plate dataset used by scripts/eval_ocr.py",
+        "targets",
+        nargs="*",
+        default=list(DEFAULT_TARGETS),
+        help=(
+            "what to download: models (detector and plate models), videos (sample footage), "
+            "ocr-benchmark (labelled plates for scripts/eval_ocr.py). "
+            f"Default: {' '.join(DEFAULT_TARGETS)}"
+        ),
     )
     args = parser.parse_args()
+    unknown = sorted(set(args.targets) - set(TARGETS))
+    if unknown:
+        parser.error(f"unknown target: {', '.join(unknown)}")
 
-    fetch_detection_weights()
-    fetch_plate_models()
-    for name, url in SAMPLE_VIDEOS.items():
-        download(url, DATA_DIR / name)
-    if args.ocr_benchmark:
+    if "models" in args.targets:
+        fetch_detection_weights()
+        fetch_plate_models()
+    if "videos" in args.targets:
+        for name, url in SAMPLE_VIDEOS.items():
+            download(url, DATA_DIR / name)
+    if "ocr-benchmark" in args.targets:
         fetch_ocr_benchmark()
 
 

@@ -47,6 +47,7 @@ class VideoSource:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._failure: Exception | None = None
+        self._fps = 0.0
 
     def __enter__(self) -> VideoSource:
         self.start()
@@ -67,6 +68,11 @@ class VideoSource:
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
+
+    @property
+    def fps(self) -> float:
+        """Frame rate the source reports, or zero when it reports none or nonsense."""
+        return self._fps if self._fps > 0 else 0.0
 
     def __iter__(self) -> Iterator[np.ndarray]:
         if self._thread is None:
@@ -91,6 +97,7 @@ class VideoSource:
             raise RuntimeError(f"cannot open video source: {self._source}")
         # advisory only, most backends ignore it - hence the explicit dropping below
         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self._fps = capture.get(cv2.CAP_PROP_FPS)
         return capture
 
     def _read_loop(self, capture: cv2.VideoCapture) -> None:

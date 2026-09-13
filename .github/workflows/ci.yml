@@ -18,3 +18,11 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -m "not integration"
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t vehicle-tracker .
+      # proves the image starts and that cv2 imports with no display present
+      - run: docker run --rm vehicle-tracker --help

@@ -106,7 +106,7 @@ def main() -> None:
     images = sorted(args.dataset.glob("*.jpg"))
     if not images:
         raise SystemExit(
-            f"no images in {args.dataset} - run: python scripts/fetch_assets.py --ocr-benchmark"
+            f"no images in {args.dataset} - run: python scripts/fetch_assets.py ocr-benchmark"
         )
     if args.limit:
         images = images[: args.limit]

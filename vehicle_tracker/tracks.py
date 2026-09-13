@@ -55,6 +55,8 @@ class TrackState:
     last_color_frame: int | None = None
     plate_votes: dict[str, float] = field(default_factory=dict)
     plate_attempts: int = 0
+    # so that a confirmed plate is reported once and not on every frame the vehicle stays in
+    announced: bool = False
 
     @property
     def color(self) -> VehicleColor | None:
@@ -80,6 +82,16 @@ class TrackState:
         if not self.plate_votes:
             return 0.0
         return max(self.plate_votes.values())
+
+
+def newly_confirmed(states: dict[int, TrackState]) -> list[TrackState]:
+    """Vehicles whose plate has just been confirmed, each one returned only once."""
+    confirmed = []
+    for state in states.values():
+        if state.plate is not None and not state.announced:
+            state.announced = True
+            confirmed.append(state)
+    return confirmed
 
 
 class TrackRegistry:
@@ -116,9 +128,15 @@ class TrackRegistry:
         self._min_plate_score = min_plate_score
         self._retry_growth = retry_growth
         self._frame_height = 0
+        self._total_tracks = 0
 
     def __len__(self) -> int:
         return len(self._states)
+
+    @property
+    def total_tracks(self) -> int:
+        """Vehicles seen since the start, including those that have left the scene."""
+        return self._total_tracks
 
     def update(
         self,
@@ -139,6 +157,7 @@ class TrackRegistry:
                     plate_budget_height=y2 - y1,
                 )
                 self._states[detection.track_id] = state
+                self._total_tracks += 1
             state.last_seen = frame_index
             self._renew_plate_budget(state, y2 - y1)
 

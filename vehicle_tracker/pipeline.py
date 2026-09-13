@@ -12,8 +12,9 @@ from vehicle_tracker.detector import VehicleDetector
 from vehicle_tracker.metrics import Metrics
 from vehicle_tracker.overlay import draw_detections, draw_status
 from vehicle_tracker.plate_reader import PlateReader
-from vehicle_tracker.tracks import TrackRegistry, TrackState
+from vehicle_tracker.tracks import TrackRegistry, TrackState, newly_confirmed
 from vehicle_tracker.video_source import VideoSource
+from vehicle_tracker.video_writer import VideoWriter
 
 logger = logging.getLogger(__name__)
 
@@ -83,21 +84,44 @@ def build_pipeline(config: Config, *, registry: TrackRegistry, metrics: Metrics)
 
 def run(config: Config) -> None:
     metrics = Metrics()
-    pipeline = build_pipeline(config, registry=TrackRegistry(), metrics=metrics)
+    registry = TrackRegistry()
+    pipeline = build_pipeline(config, registry=registry, metrics=metrics)
+    writer = None
 
     with VideoSource(config.source) as source:
-        for frame_index, frame in enumerate(source):
-            frame_started = time.perf_counter()
-            states = pipeline.process(frame_index, frame)
+        if config.output is not None:
+            writer = VideoWriter(config.output, source.fps)
+        try:
+            for frame_index, frame in enumerate(source):
+                frame_started = time.perf_counter()
+                states = pipeline.process(frame_index, frame)
+                report(states)
 
-            draw_status(frame, metrics.status_line())
-            cv2.imshow(WINDOW_NAME, frame)
-            metrics.frame_done(time.perf_counter() - frame_started, had_vehicles=bool(states))
+                draw_status(frame, metrics.status_line())
+                if writer is not None:
+                    writer.write(frame)
+                if config.display:
+                    cv2.imshow(WINDOW_NAME, frame)
+                metrics.frame_done(time.perf_counter() - frame_started, had_vehicles=bool(states))
 
-            if cv2.waitKey(1) & 0xFF in QUIT_KEYS:
-                logger.info("stopped by user")
-                break
+                if config.display and cv2.waitKey(1) & 0xFF in QUIT_KEYS:
+                    logger.info("stopped by user")
+                    break
+        except KeyboardInterrupt:
+            # the usual way to stop a container, and the output file still has to be closed
+            logger.info("interrupted")
+        finally:
+            if writer is not None:
+                writer.close()
 
-    cv2.destroyAllWindows()
+    if config.display:
+        cv2.destroyAllWindows()
+    logger.info("vehicles seen: %d", registry.total_tracks)
     for line in metrics.summary():
         logger.info("%s", line)
+
+
+def report(states: dict[int, TrackState]) -> None:
+    for state in newly_confirmed(states):
+        color = state.color.name if state.color is not None else "unknown"
+        logger.info("vehicle %d: %s, plate %s", state.track_id, color, state.plate)

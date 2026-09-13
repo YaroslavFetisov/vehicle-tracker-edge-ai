@@ -21,6 +21,8 @@ class Config:
     weights: Path
     confidence: float
     image_size: int
+    display: bool = True
+    output: Path | None = None
 
 
 def parse_source(value: str) -> str | int:
@@ -70,6 +72,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_IMAGE_SIZE,
         help=f"inference image size (default: {DEFAULT_IMAGE_SIZE})",
     )
+    parser.add_argument(
+        "--no-display",
+        action="store_true",
+        help="do not open a window, for servers and containers",
+    )
+    parser.add_argument(
+        "--save-video",
+        type=Path,
+        metavar="PATH",
+        help="write the annotated video to this file",
+    )
     return parser
 
 
@@ -81,4 +94,6 @@ def parse_args(argv: Sequence[str] | None = None) -> Config:
         weights=args.weights,
         confidence=args.conf,
         image_size=args.imgsz,
+        display=not args.no_display,
+        output=args.save_video,
     )

@@ -4,7 +4,7 @@ import numpy as np
 
 from vehicle_tracker.detection import Detection
 from vehicle_tracker.plate import PlateReading
-from vehicle_tracker.tracks import TrackRegistry
+from vehicle_tracker.tracks import TrackRegistry, newly_confirmed
 
 FRAME_SIZE = 200
 BBOX = (40, 40, 160, 160)
@@ -283,6 +283,43 @@ def test_plate_is_unknown_before_any_reading():
     states = registry.update(0, solid_frame(RED), [detection()])
 
     assert states[1].plate is None
+
+
+def test_a_confirmed_plate_is_reported_once_and_not_again():
+    registry = TrackRegistry(min_plate_score=2.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(3):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+    states = registry.update(3, solid_frame(RED), [detection()])
+
+    assert [state.track_id for state in newly_confirmed(states)] == [1]
+    assert newly_confirmed(states) == []
+
+
+def test_a_vehicle_without_a_settled_plate_is_not_reported():
+    registry = TrackRegistry(min_plate_score=2.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("CF5775"))
+    states = registry.update(1, solid_frame(RED), [detection()])
+
+    assert newly_confirmed(states) == []
+
+
+def test_vehicles_that_left_the_scene_are_still_counted():
+    registry = TrackRegistry(expiry_frames=10)
+    registry.update(0, solid_frame(RED), [detection(track_id=1)])
+    registry.update(50, solid_frame(RED), [detection(track_id=2)])
+
+    assert len(registry) == 1
+    assert registry.total_tracks == 2
+
+
+def test_a_vehicle_is_counted_once_however_long_it_stays():
+    registry = TrackRegistry()
+    for frame_index in range(10):
+        registry.update(frame_index, solid_frame(RED), [detection()])
+
+    assert registry.total_tracks == 1
 
 
 def test_recording_a_plate_for_an_unknown_track_is_ignored():
