@@ -22,14 +22,16 @@ def test_the_known_plate_is_read_from_the_sample_clip():
     # imported here so that the unit test run does not need the ML stack installed
     from vehicle_tracker.detector import VehicleDetector
     from vehicle_tracker.metrics import Metrics
-    from vehicle_tracker.pipeline import read_plates
+    from vehicle_tracker.pipeline import Pipeline
     from vehicle_tracker.plate_reader import PlateReader
     from vehicle_tracker.tracks import TrackRegistry
 
-    detector = VehicleDetector(WEIGHTS, device="cpu", confidence=0.5, image_size=640)
-    plate_reader = PlateReader(device="cpu")
-    registry = TrackRegistry()
-    metrics = Metrics()
+    pipeline = Pipeline(
+        VehicleDetector(WEIGHTS, device="cpu", confidence=0.5, image_size=640),
+        PlateReader(device="cpu"),
+        TrackRegistry(),
+        Metrics(),
+    )
 
     capture = cv2.VideoCapture(str(SAMPLE_VIDEO))
     plates = set()
@@ -38,9 +40,7 @@ def test_the_known_plate_is_read_from_the_sample_clip():
             ok, frame = capture.read()
             if not ok:
                 break
-            detections = detector.track(frame)
-            states = registry.update(frame_index, frame, detections)
-            read_plates(frame, frame_index, detections, registry, plate_reader, metrics)
+            states = pipeline.process(frame_index, frame)
             plates.update(state.plate for state in states.values() if state.plate is not None)
     finally:
         capture.release()

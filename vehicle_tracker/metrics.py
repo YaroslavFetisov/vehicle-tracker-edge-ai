@@ -62,9 +62,21 @@ class Metrics:
                 else (1 - self._smoothing) * self._fps + self._smoothing * instant
             )
 
+    def reset(self) -> None:
+        """Drop everything measured so far, used to exclude warm up frames from a benchmark."""
+        self._stages.clear()
+        self._frames = 0
+        self._frames_without_vehicles = 0
+        self._seconds = 0.0
+        self._fps = 0.0
+
     @property
     def fps(self) -> float:
         return self._fps
+
+    @property
+    def average_fps(self) -> float:
+        return 0.0 if self._seconds <= 0 else self._frames / self._seconds
 
     @property
     def frames(self) -> int:
@@ -89,13 +101,13 @@ class Metrics:
         return f"{self._fps:.0f} fps   {stages}"
 
     def summary(self) -> list[str]:
-        average = self._frames / self._seconds if self._seconds > 0 else 0.0
         lines = [
-            f"{self._frames} frames in {self._seconds:.1f}s, {average:.1f} fps average",
+            f"{self._frames} frames in {self._seconds:.1f}s, {self.average_fps:.1f} fps average",
             f"frames without vehicles: {self._frames_without_vehicles}",
             f"{'stage':<10}{'calls':>8}{'per frame':>11}{'ms/call':>10}{'ms/frame':>10}",
         ]
-        for name, stage in self._stages.items():
+        # nested stages last, so that two runs produce tables in the same order
+        for name, stage in sorted(self._stages.items(), key=lambda item: item[1].nested):
             lines.append(
                 f"{name:<10}{stage.calls:>8}{stage.calls / max(self._frames, 1):>11.2f}"
                 f"{stage.mean_ms():>10.1f}{self.ms_per_frame(name):>10.1f}"

@@ -87,6 +87,19 @@ def test_a_nested_stage_is_kept_out_of_the_frame_budget():
     assert "plate read" in "\n".join(metrics.summary())
 
 
+def test_reset_discards_the_warm_up_frames():
+    metrics = Metrics()
+    metrics.record("detect", 0.500)
+    metrics.frame_done(0.500, had_vehicles=True)
+
+    metrics.reset()
+    metrics.record("detect", 0.010)
+    metrics.frame_done(0.010, had_vehicles=True)
+
+    assert metrics.frames == 1
+    assert metrics.ms_per_frame("detect") == 10.0
+
+
 def test_summary_reports_every_stage():
     metrics = Metrics()
     metrics.record("detect", 0.010)
@@ -97,3 +110,14 @@ def test_summary_reports_every_stage():
     assert "detect" in summary
     assert "plate" in summary
     assert "1 frames" in summary
+
+
+def test_a_nested_stage_is_listed_after_the_stage_that_contains_it():
+    metrics = Metrics()
+    metrics.record("plate read", 0.090, nested=True)
+    metrics.record("plate", 0.100)
+    metrics.record("draw", 0.001)
+    metrics.frame_done(0.110, had_vehicles=True)
+
+    stages = [line[:10].strip() for line in metrics.summary()[3:]]
+    assert stages == ["plate", "draw", "plate read"]

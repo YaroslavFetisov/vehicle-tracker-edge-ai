@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import shutil
 import sys
 import urllib.error
@@ -27,15 +29,31 @@ SAMPLE_VIDEOS = {
     ),
 }
 
+# OpenALPR end to end benchmark: vehicle photos with the plate text as ground truth, used by
+# scripts/eval_ocr.py. Only the european half is fetched, the repository itself is ~190 MB.
+OCR_BENCHMARK_DIR = DATA_DIR / "openalpr-eu"
+OCR_BENCHMARK_LISTING = "https://api.github.com/repos/openalpr/benchmarks/contents/endtoend/eu"
 
-def download(url: str, target: Path) -> None:
+
+def read_url(url: str) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.read()
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"failed to fetch {url}: {exc.reason}") from exc
+
+
+def download(url: str, target: Path, *, announce: bool = True) -> None:
     if target.exists():
-        print(f"{target.name}: already present")
+        if announce:
+            print(f"{target.name}: already present")
         return
 
     target.parent.mkdir(parents=True, exist_ok=True)
     partial = target.with_suffix(target.suffix + ".part")
-    print(f"{target.name}: downloading")
+    if announce:
+        print(f"{target.name}: downloading")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request) as response, partial.open("wb") as handle:
@@ -44,7 +62,8 @@ def download(url: str, target: Path) -> None:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"failed to download {url}: {exc.reason}") from exc
     partial.replace(target)
-    print(f"{target.name}: {target.stat().st_size / 1e6:.1f} MB")
+    if announce:
+        print(f"{target.name}: {target.stat().st_size / 1e6:.1f} MB")
 
 
 def fetch_detection_weights() -> None:
@@ -72,11 +91,35 @@ def fetch_plate_models() -> None:
     print("plate models: ready")
 
 
+def fetch_ocr_benchmark() -> None:
+    entries = json.loads(read_url(OCR_BENCHMARK_LISTING))
+    files = [entry for entry in entries if entry["type"] == "file"]
+    missing = [entry for entry in files if not (OCR_BENCHMARK_DIR / entry["name"]).exists()]
+    if not missing:
+        print(f"ocr benchmark: {len(files)} files already present")
+        return
+
+    print(f"ocr benchmark: downloading {len(missing)} of {len(files)} files")
+    for entry in missing:
+        download(entry["download_url"], OCR_BENCHMARK_DIR / entry["name"], announce=False)
+    print(f"ocr benchmark: ready in {OCR_BENCHMARK_DIR}")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(prog="fetch-assets", description=__doc__)
+    parser.add_argument(
+        "--ocr-benchmark",
+        action="store_true",
+        help="also download the labelled plate dataset used by scripts/eval_ocr.py",
+    )
+    args = parser.parse_args()
+
     fetch_detection_weights()
     fetch_plate_models()
     for name, url in SAMPLE_VIDEOS.items():
         download(url, DATA_DIR / name)
+    if args.ocr_benchmark:
+        fetch_ocr_benchmark()
 
 
 if __name__ == "__main__":
