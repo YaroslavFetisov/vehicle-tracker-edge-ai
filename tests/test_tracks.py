@@ -165,6 +165,70 @@ def test_ocr_gives_up_after_enough_failed_attempts():
     assert registry.due_for_plate(10, [detection()]) == []
 
 
+def approaching(height: int, track_id: int = 1) -> Detection:
+    return Detection(track_id=track_id, bbox=(40, 0, 160, height), class_id=2, confidence=0.9)
+
+
+def exhaust_budget(registry: TrackRegistry, vehicle: Detection, attempts: int) -> None:
+    registry.update(0, solid_frame(RED), [vehicle])
+    for frame_index in range(attempts):
+        registry.record_plate(vehicle.track_id, frame_index, None)
+
+
+def test_a_vehicle_that_has_not_come_closer_is_not_retried():
+    registry = TrackRegistry(plate_interval=1, max_plate_attempts=3)
+    far = approaching(40)
+    exhaust_budget(registry, far, 3)
+    registry.update(4, solid_frame(RED), [far])
+
+    assert registry.due_for_plate(10, [far]) == []
+
+
+def test_a_vehicle_that_has_come_closer_gets_another_chance():
+    registry = TrackRegistry(plate_interval=1, max_plate_attempts=3, retry_growth=1.5)
+    far, near = approaching(40), approaching(60)
+    exhaust_budget(registry, far, 3)
+    states = registry.update(4, solid_frame(RED), [near])
+
+    assert states[1].plate_attempts == 0
+    assert registry.due_for_plate(10, [near]) == [near]
+
+
+def test_coming_a_little_closer_is_not_enough_to_retry():
+    registry = TrackRegistry(plate_interval=1, max_plate_attempts=3, retry_growth=1.5)
+    far, slightly_nearer = approaching(40), approaching(55)
+    exhaust_budget(registry, far, 3)
+    registry.update(4, solid_frame(RED), [slightly_nearer])
+
+    assert registry.due_for_plate(10, [slightly_nearer]) == []
+
+
+def test_every_further_retry_costs_another_approach():
+    registry = TrackRegistry(plate_interval=1, max_plate_attempts=3, retry_growth=1.5)
+    exhaust_budget(registry, approaching(40), 3)
+
+    registry.update(4, solid_frame(RED), [approaching(60)])
+    for frame_index in range(5, 8):
+        registry.record_plate(1, frame_index, None)
+
+    registry.update(9, solid_frame(RED), [approaching(80)])
+    assert registry.due_for_plate(10, [approaching(80)]) == []
+
+    registry.update(10, solid_frame(RED), [approaching(90)])
+    assert registry.due_for_plate(11, [approaching(90)]) == [approaching(90)]
+
+
+def test_a_settled_plate_is_not_reread_when_the_vehicle_comes_closer():
+    registry = TrackRegistry(plate_interval=1, max_plate_attempts=3, confident_plate_score=2.0)
+    far, near = approaching(40), approaching(120)
+    registry.update(0, solid_frame(RED), [far])
+    for frame_index in range(3):
+        registry.record_plate(1, frame_index, reading("AA1234BB"))
+    registry.update(4, solid_frame(RED), [near])
+
+    assert registry.due_for_plate(10, [near]) == []
+
+
 def test_plate_majority_wins_over_scattered_misreadings():
     registry = TrackRegistry()
     registry.update(0, solid_frame(RED), [detection()])

@@ -20,6 +20,16 @@ TRACK_EXPIRY_FRAMES = 90
 PLATE_SAMPLE_INTERVAL = 5
 MAX_PLATE_ATTEMPTS = 40
 
+# A vehicle that has doubled in height gets a fresh allowance, because its plate has roughly
+# doubled in width too, and that is exactly the span over which the recognizer becomes usable:
+# characters are 13% correct between 20 and 39 pixels of plate width and 82% correct above it.
+# Without this a long lived track spends its whole budget while still far away - on the sample
+# clip a bus is in view for 377 frames and only becomes readable in the last 40 of them. A
+# smaller factor renews too early and wastes the new budget on frames that are still hopeless;
+# a larger one never triggers. A vehicle that does not approach never renews, so dense traffic
+# pays nothing for this.
+PLATE_RETRY_GROWTH = 2.0
+
 # Expressed against the frame rather than in pixels: an absolute threshold tuned at 1080p
 # rejects every vehicle on a 480p camera, which is exactly the kind of source this runs on.
 MIN_VEHICLE_HEIGHT_FRACTION = 0.08
@@ -40,6 +50,7 @@ class TrackState:
     last_seen: int
     min_plate_score: float
     last_plate_frame: int
+    plate_budget_height: int
     color_votes: Counter[VehicleColor] = field(default_factory=Counter)
     last_color_frame: int | None = None
     plate_votes: dict[str, float] = field(default_factory=dict)
@@ -91,6 +102,7 @@ class TrackRegistry:
         max_plate_reads_per_frame: int = MAX_PLATE_READS_PER_FRAME,
         confident_plate_score: float = PLATE_CONFIDENT_SCORE,
         min_plate_score: float = MIN_REPORTED_PLATE_SCORE,
+        retry_growth: float = PLATE_RETRY_GROWTH,
     ) -> None:
         self._states: dict[int, TrackState] = {}
         self._color_interval = color_interval
@@ -102,6 +114,7 @@ class TrackRegistry:
         self._max_plate_reads_per_frame = max_plate_reads_per_frame
         self._confident_plate_score = confident_plate_score
         self._min_plate_score = min_plate_score
+        self._retry_growth = retry_growth
         self._frame_height = 0
 
     def __len__(self) -> int:
@@ -115,6 +128,7 @@ class TrackRegistry:
     ) -> dict[int, TrackState]:
         self._frame_height = frame.shape[0]
         for detection in detections:
+            _, y1, _, y2 = detection.bbox
             state = self._states.get(detection.track_id)
             if state is None:
                 state = TrackState(
@@ -122,9 +136,11 @@ class TrackRegistry:
                     last_seen=frame_index,
                     min_plate_score=self._min_plate_score,
                     last_plate_frame=self._staggered_start(detection.track_id, frame_index),
+                    plate_budget_height=y2 - y1,
                 )
                 self._states[detection.track_id] = state
             state.last_seen = frame_index
+            self._renew_plate_budget(state, y2 - y1)
 
             if self._needs_color(state, frame_index):
                 color = estimate_color(frame, detection.bbox)
@@ -148,6 +164,14 @@ class TrackRegistry:
 
         due.sort(key=lambda detection: self._states[detection.track_id].last_plate_frame)
         return due[: self._max_plate_reads_per_frame]
+
+    def _renew_plate_budget(self, state: TrackState, height: int) -> None:
+        if state.plate_attempts < self._max_plate_attempts:
+            return
+        if height < state.plate_budget_height * self._retry_growth:
+            return
+        state.plate_attempts = 0
+        state.plate_budget_height = height
 
     def _staggered_start(self, track_id: int, frame_index: int) -> int:
         # vehicles entering the scene together would otherwise queue their first pass on
