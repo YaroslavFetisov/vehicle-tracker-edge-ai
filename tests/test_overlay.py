@@ -57,6 +57,19 @@ def test_box_takes_the_vehicle_color():
     assert tuple(int(channel) for channel in frame[40, 60]) == color_from_name("red").bgr
 
 
+def test_nearer_vehicles_are_drawn_over_distant_ones():
+    frame = make_frame()
+    far = Detection(track_id=1, bbox=(20, 40, 40, 55), class_id=2, confidence=0.9)
+    near = Detection(track_id=2, bbox=(10, 40, 120, 100), class_id=2, confidence=0.9)
+    states = {1: TrackState(track_id=1, last_seen=0), 2: TrackState(track_id=2, last_seen=0)}
+    states[1].color_votes[color_from_name("red")] += 1
+    states[2].color_votes[color_from_name("white")] += 1
+
+    draw_detections(frame, [far, near], states)
+
+    assert tuple(int(channel) for channel in frame[40, 60]) == color_from_name("white").bgr
+
+
 def test_label_stays_readable_on_light_and_dark_boxes():
     assert text_color(color_from_name("white").bgr) == DARK_TEXT
     assert text_color(color_from_name("black").bgr) == LIGHT_TEXT

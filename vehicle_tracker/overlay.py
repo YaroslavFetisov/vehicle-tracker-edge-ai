@@ -29,7 +29,9 @@ def draw_detections(
     states: dict[int, TrackState],
 ) -> None:
     """Annotates the frame in place."""
-    for detection in detections:
+    # labels are wider than a distant vehicle's box and would overwrite each other in
+    # traffic, so the nearest vehicles are drawn last and stay readable
+    for detection in sorted(detections, key=box_area):
         state = states.get(detection.track_id)
         color = state.color if state is not None else None
         box_color = color.bgr if color is not None else UNKNOWN_COLOR
@@ -37,10 +39,17 @@ def draw_detections(
         label = f"ID {detection.track_id}"
         if color is not None:
             label = f"{label}  {color.name}"
+        if state is not None and state.plate is not None:
+            label = f"{label}  {state.plate}"
 
         x1, y1, x2, y2 = detection.bbox
         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, BOX_THICKNESS)
         draw_label(frame, label, (x1, y1), box_color)
+
+
+def box_area(detection: Detection) -> int:
+    x1, y1, x2, y2 = detection.bbox
+    return (x2 - x1) * (y2 - y1)
 
 
 def draw_label(

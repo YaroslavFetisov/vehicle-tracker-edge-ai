@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from vehicle_tracker.detection import Detection
+from vehicle_tracker.plate import PlateReading
 from vehicle_tracker.tracks import TrackRegistry
 
 FRAME_SIZE = 200
@@ -70,3 +71,111 @@ def test_state_without_samples_reports_no_color():
     states = registry.update(0, solid_frame(RED), [detection()])
 
     assert states[1].color is None
+
+
+def reading(text: str, confidence: float = 0.9) -> PlateReading:
+    return PlateReading(text=text, detection_confidence=0.9, ocr_confidence=confidence)
+
+
+def test_large_vehicles_are_queued_for_plate_reading():
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+
+    assert registry.due_for_plate(0, [detection()]) == [detection()]
+
+
+def test_small_vehicles_are_not_worth_an_ocr_pass():
+    registry = TrackRegistry()
+    small = Detection(track_id=1, bbox=(0, 0, 50, 50), class_id=2, confidence=0.9)
+    registry.update(0, solid_frame(RED), [small])
+
+    assert registry.due_for_plate(0, [small]) == []
+
+
+def test_ocr_is_not_retried_on_every_frame():
+    registry = TrackRegistry(plate_interval=5)
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("AA1234BB"))
+
+    assert registry.due_for_plate(1, [detection()]) == []
+
+
+def test_ocr_stops_once_the_answer_is_settled():
+    registry = TrackRegistry(plate_interval=1, confident_plate_score=2.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(4):
+        registry.record_plate(1, frame_index, reading("AA1234BB"))
+
+    assert registry.due_for_plate(10, [detection()]) == []
+
+
+def test_ocr_gives_up_after_enough_failed_attempts():
+    registry = TrackRegistry(plate_interval=1, max_plate_attempts=3)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(3):
+        registry.record_plate(1, frame_index, None)
+
+    assert registry.due_for_plate(10, [detection()]) == []
+
+
+def test_plate_majority_wins_over_scattered_misreadings():
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index, text in enumerate(["CF5775", "CF5775", "CF5775", "EF5775", "CF5715"]):
+        registry.record_plate(1, frame_index, reading(text))
+
+    states = registry.update(1, solid_frame(RED), [detection()])
+    assert states[1].plate == "CF5775"
+
+
+def test_local_format_breaks_a_tie():
+    registry = TrackRegistry(min_plate_score=0.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("AA1234BB"))
+    registry.record_plate(1, 1, reading("CF57751"))
+
+    states = registry.update(2, solid_frame(RED), [detection()])
+    assert states[1].plate == "AA1234BB"
+
+
+def test_a_single_reading_is_not_reported_yet():
+    registry = TrackRegistry(min_plate_score=2.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("CF5775"))
+
+    states = registry.update(1, solid_frame(RED), [detection()])
+    assert states[1].plate is None
+
+
+def test_a_plate_is_reported_once_frames_agree():
+    registry = TrackRegistry(min_plate_score=2.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(3):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+
+    states = registry.update(3, solid_frame(RED), [detection()])
+    assert states[1].plate == "CF5775"
+
+
+def test_a_failed_reading_still_counts_as_an_attempt():
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, None)
+
+    states = registry.update(1, solid_frame(RED), [detection()])
+    assert states[1].plate_attempts == 1
+    assert states[1].plate is None
+
+
+def test_plate_is_unknown_before_any_reading():
+    registry = TrackRegistry()
+    states = registry.update(0, solid_frame(RED), [detection()])
+
+    assert states[1].plate is None
+
+
+def test_recording_a_plate_for_an_unknown_track_is_ignored():
+    registry = TrackRegistry()
+    registry.record_plate(99, 0, reading("AA1234BB"))
+
+    assert len(registry) == 0
