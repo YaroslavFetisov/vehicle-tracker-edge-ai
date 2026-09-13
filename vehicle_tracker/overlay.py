@@ -15,6 +15,8 @@ LABEL_PADDING = 4
 DARK_TEXT = (0, 0, 0)
 LIGHT_TEXT = (255, 255, 255)
 LUMINANCE_THRESHOLD = 140
+STATUS_BACKGROUND = (40, 40, 40)
+STATUS_ANCHOR = (4, 26)
 
 
 def text_color(background: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -45,6 +47,10 @@ def draw_detections(
         x1, y1, x2, y2 = detection.bbox
         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, BOX_THICKNESS)
         draw_label(frame, label, (x1, y1), box_color)
+
+
+def draw_status(frame: np.ndarray, text: str) -> None:
+    draw_label(frame, text, STATUS_ANCHOR, STATUS_BACKGROUND)
 
 
 def box_area(detection: Detection) -> int:

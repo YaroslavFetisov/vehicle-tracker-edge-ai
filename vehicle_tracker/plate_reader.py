@@ -43,6 +43,13 @@ def providers_for(device: str) -> list[str] | None:
 class PlateReader:
     def __init__(self, *, device: str = "auto") -> None:
         onnxruntime.set_default_logger_severity(ONNX_ERROR_SEVERITY)
+        # the severity above also hides the runtime's own fallback warning, so the one
+        # case that matters - asking for a GPU and silently getting a CPU - is checked here
+        if (
+            device == "cuda"
+            and "CUDAExecutionProvider" not in onnxruntime.get_available_providers()
+        ):
+            logger.warning("no CUDA execution provider available, plate models run on the CPU")
         self._detector = create_detector(DETECTION_MODEL, providers=providers_for(device))
         self._recognizer = LicensePlateRecognizer(hub_ocr_model=OCR_MODEL, device=device)
         self._expects_grayscale = self._recognizer.config.image_color_mode == "grayscale"

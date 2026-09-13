@@ -81,15 +81,62 @@ def test_large_vehicles_are_queued_for_plate_reading():
     registry = TrackRegistry()
     registry.update(0, solid_frame(RED), [detection()])
 
-    assert registry.due_for_plate(0, [detection()]) == [detection()]
+    assert registry.due_for_plate(10, [detection()]) == [detection()]
 
 
-def test_small_vehicles_are_not_worth_an_ocr_pass():
+def test_vehicles_too_small_for_the_frame_are_not_worth_an_ocr_pass():
     registry = TrackRegistry()
-    small = Detection(track_id=1, bbox=(0, 0, 50, 50), class_id=2, confidence=0.9)
+    small = Detection(track_id=1, bbox=(0, 0, 50, 10), class_id=2, confidence=0.9)
     registry.update(0, solid_frame(RED), [small])
 
-    assert registry.due_for_plate(0, [small]) == []
+    assert registry.due_for_plate(10, [small]) == []
+
+
+def test_vehicle_size_is_measured_against_the_frame_not_in_pixels():
+    vehicle = Detection(track_id=1, bbox=(0, 0, 60, 40), class_id=2, confidence=0.9)
+    small_frame = np.zeros((200, 200, 3), dtype=np.uint8)
+    large_frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+    on_small = TrackRegistry()
+    on_small.update(0, small_frame, [vehicle])
+    on_large = TrackRegistry()
+    on_large.update(0, large_frame, [vehicle])
+
+    assert on_small.due_for_plate(10, [vehicle]) == [vehicle]
+    assert on_large.due_for_plate(10, [vehicle]) == []
+
+
+def test_vehicles_appearing_together_do_not_queue_on_the_same_frame():
+    registry = TrackRegistry(plate_interval=5, max_plate_reads_per_frame=10)
+    together = [detection(track_id) for track_id in (1, 2, 3)]
+
+    per_frame = []
+    for frame_index in range(6):
+        registry.update(frame_index, solid_frame(RED), together)
+        due = registry.due_for_plate(frame_index, together)
+        per_frame.append(len(due))
+        for served in due:
+            registry.record_plate(served.track_id, frame_index, None)
+
+    assert max(per_frame) == 1
+    assert sum(per_frame) == len(together)
+
+
+def test_plate_reads_are_capped_per_frame():
+    registry = TrackRegistry(plate_interval=1, max_plate_reads_per_frame=2)
+    crowd = [detection(track_id) for track_id in range(1, 6)]
+    registry.update(0, solid_frame(RED), crowd)
+
+    assert len(registry.due_for_plate(10, crowd)) == 2
+
+
+def test_the_longest_waiting_vehicle_is_served_first():
+    registry = TrackRegistry(plate_interval=1, max_plate_reads_per_frame=1)
+    waiting = [detection(1), detection(2)]
+    registry.update(0, solid_frame(RED), waiting)
+    registry.record_plate(1, 5, None)
+
+    assert [served.track_id for served in registry.due_for_plate(10, waiting)] == [2]
 
 
 def test_ocr_is_not_retried_on_every_frame():

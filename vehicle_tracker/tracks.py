@@ -19,7 +19,14 @@ TRACK_EXPIRY_FRAMES = 90
 # loses plates that a slower schedule reads correctly.
 PLATE_SAMPLE_INTERVAL = 5
 MAX_PLATE_ATTEMPTS = 40
-MIN_VEHICLE_SIDE = 90
+
+# Expressed against the frame rather than in pixels: an absolute threshold tuned at 1080p
+# rejects every vehicle on a 480p camera, which is exactly the kind of source this runs on.
+MIN_VEHICLE_HEIGHT_FRACTION = 0.08
+
+# Plate reading is the one stage that can outgrow a frame's time budget, so a burst of
+# vehicles arriving together is served over several frames instead of all at once.
+MAX_PLATE_READS_PER_FRAME = 2
 
 # A single reading of a distant or motion blurred plate is close to a random guess, so a
 # plate is only reported once several frames agree on it, and retried until they strongly do.
@@ -32,10 +39,10 @@ class TrackState:
     track_id: int
     last_seen: int
     min_plate_score: float
+    last_plate_frame: int
     color_votes: Counter[VehicleColor] = field(default_factory=Counter)
     last_color_frame: int | None = None
     plate_votes: dict[str, float] = field(default_factory=dict)
-    last_plate_frame: int | None = None
     plate_attempts: int = 0
 
     @property
@@ -80,7 +87,8 @@ class TrackRegistry:
         expiry_frames: int = TRACK_EXPIRY_FRAMES,
         plate_interval: int = PLATE_SAMPLE_INTERVAL,
         max_plate_attempts: int = MAX_PLATE_ATTEMPTS,
-        min_vehicle_side: int = MIN_VEHICLE_SIDE,
+        min_vehicle_height_fraction: float = MIN_VEHICLE_HEIGHT_FRACTION,
+        max_plate_reads_per_frame: int = MAX_PLATE_READS_PER_FRAME,
         confident_plate_score: float = PLATE_CONFIDENT_SCORE,
         min_plate_score: float = MIN_REPORTED_PLATE_SCORE,
     ) -> None:
@@ -90,9 +98,11 @@ class TrackRegistry:
         self._expiry_frames = expiry_frames
         self._plate_interval = plate_interval
         self._max_plate_attempts = max_plate_attempts
-        self._min_vehicle_side = min_vehicle_side
+        self._min_vehicle_height_fraction = min_vehicle_height_fraction
+        self._max_plate_reads_per_frame = max_plate_reads_per_frame
         self._confident_plate_score = confident_plate_score
         self._min_plate_score = min_plate_score
+        self._frame_height = 0
 
     def __len__(self) -> int:
         return len(self._states)
@@ -103,6 +113,7 @@ class TrackRegistry:
         frame: np.ndarray,
         detections: list[Detection],
     ) -> dict[int, TrackState]:
+        self._frame_height = frame.shape[0]
         for detection in detections:
             state = self._states.get(detection.track_id)
             if state is None:
@@ -110,6 +121,7 @@ class TrackRegistry:
                     track_id=detection.track_id,
                     last_seen=frame_index,
                     min_plate_score=self._min_plate_score,
+                    last_plate_frame=self._staggered_start(detection.track_id, frame_index),
                 )
                 self._states[detection.track_id] = state
             state.last_seen = frame_index
@@ -125,12 +137,22 @@ class TrackRegistry:
 
     def due_for_plate(self, frame_index: int, detections: list[Detection]) -> list[Detection]:
         """Vehicles worth spending a plate detection and an OCR pass on this frame."""
-        return [
+        due = [
             detection
             for detection in detections
             if detection.track_id in self._states
             and self._needs_plate(self._states[detection.track_id], detection, frame_index)
         ]
+        if len(due) <= self._max_plate_reads_per_frame:
+            return due
+
+        due.sort(key=lambda detection: self._states[detection.track_id].last_plate_frame)
+        return due[: self._max_plate_reads_per_frame]
+
+    def _staggered_start(self, track_id: int, frame_index: int) -> int:
+        # vehicles entering the scene together would otherwise queue their first pass on
+        # the same frame and then stay in lockstep for as long as they are tracked
+        return frame_index + track_id % self._plate_interval - self._plate_interval
 
     def record_plate(self, track_id: int, frame_index: int, reading: PlateReading | None) -> None:
         state = self._states.get(track_id)
@@ -149,12 +171,10 @@ class TrackRegistry:
         if state.plate_score >= self._confident_plate_score:
             return False
 
-        x1, y1, x2, y2 = detection.bbox
-        if min(x2 - x1, y2 - y1) < self._min_vehicle_side:
+        _, y1, _, y2 = detection.bbox
+        if y2 - y1 < self._frame_height * self._min_vehicle_height_fraction:
             return False
 
-        if state.last_plate_frame is None:
-            return True
         return frame_index - state.last_plate_frame >= self._plate_interval
 
     def _needs_color(self, state: TrackState, frame_index: int) -> bool:

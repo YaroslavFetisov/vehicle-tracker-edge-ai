@@ -21,7 +21,7 @@ def make_detection() -> Detection:
 
 
 def make_state(track_id: int, color: str) -> TrackState:
-    state = TrackState(track_id=track_id, last_seen=0, min_plate_score=2.0)
+    state = TrackState(track_id=track_id, last_seen=0, min_plate_score=2.0, last_plate_frame=0)
     state.color_votes[color_from_name(color)] += 1
     return state
 
