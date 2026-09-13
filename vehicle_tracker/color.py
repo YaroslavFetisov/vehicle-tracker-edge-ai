@@ -5,19 +5,24 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-# The body panel is sampled instead of the whole box: the upper part of a vehicle is
-# glass reflecting the sky, and the lower part is grille, shadow and road surface.
+# The body panel is sampled instead of the whole box: the upper part of a vehicle is glass
+# reflecting the sky, and the bottom edge is road surface. The band reaches lower than the
+# windows suggest, because the body of a bus or a van sits below where a car's does.
 SAMPLE_LEFT = 0.25
 SAMPLE_RIGHT = 0.75
 SAMPLE_TOP = 0.40
-SAMPLE_BOTTOM = 0.70
+SAMPLE_BOTTOM = 0.85
 MIN_SAMPLE_PIXELS = 40
 
 HUE_RANGE = 180
 HUE_SMOOTHING = 10
 
 ACHROMATIC_SATURATION = 60
-BLACK_VALUE = 70
+# Raised from 70 after measuring on labelled vehicles: dark paint keeps enough saturation to
+# be read as a hue, so cars that are plainly black came out blue. Below this brightness the
+# colour of a vehicle is not recoverable and black is the honest answer. Higher still starts
+# calling a yellow machine black, which is why the threshold sits here.
+BLACK_VALUE = 110
 WHITE_VALUE = 175
 
 # Cyan, purple and magenta are not production car colours: such readings come from dark
@@ -107,13 +112,13 @@ def estimate_color(frame: np.ndarray, bbox: tuple[int, int, int, int]) -> Vehicl
     hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
     hue, saturation, value = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
 
-    median_value = float(np.median(value))
+    level = float(np.median(value))
     # hue carries no information in near darkness, where sensor noise inflates saturation
-    if median_value < BLACK_VALUE:
+    if level < BLACK_VALUE:
         return color_from_name("black")
 
     if float(np.median(saturation)) < ACHROMATIC_SATURATION:
-        return color_from_name(name_for_brightness(median_value))
+        return color_from_name(name_for_brightness(level))
 
     colored = saturation >= ACHROMATIC_SATURATION
     return color_from_name(name_for_hue(dominant_hue(hue[colored])))

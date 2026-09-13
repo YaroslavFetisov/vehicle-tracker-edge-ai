@@ -3,7 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from vehicle_tracker.color import dominant_hue, estimate_color, name_for_hue
+from vehicle_tracker.color import (
+    SAMPLE_BOTTOM,
+    SAMPLE_TOP,
+    dominant_hue,
+    estimate_color,
+    name_for_hue,
+)
 
 FRAME_SIZE = 200
 BBOX = (40, 40, 160, 160)
@@ -38,11 +44,26 @@ def test_only_the_body_band_is_sampled():
     frame = np.zeros((FRAME_SIZE, FRAME_SIZE, 3), dtype=np.uint8)
     x1, y1, x2, y2 = BBOX
     height = y2 - y1
-    frame[y1 : y1 + int(height * 0.4)] = (0, 0, 200)
-    frame[y1 + int(height * 0.4) : y1 + int(height * 0.7)] = (200, 0, 0)
-    frame[y1 + int(height * 0.7) : y2] = (0, 200, 0)
+    frame[y1 : y1 + int(height * SAMPLE_TOP)] = (0, 0, 200)
+    frame[y1 + int(height * SAMPLE_TOP) : y1 + int(height * SAMPLE_BOTTOM)] = (200, 0, 0)
+    frame[y1 + int(height * SAMPLE_BOTTOM) : y2] = (0, 200, 0)
 
     color = estimate_color(frame, BBOX)
+    assert color is not None
+    assert color.name == "blue"
+
+
+def test_dark_paint_reads_as_black_rather_than_as_its_hue():
+    # dark blue paint keeps enough saturation to be classified by hue, and a car that is
+    # plainly black then comes out blue
+    color = estimate_color(solid_frame((100, 40, 35)), BBOX)
+    assert color is not None
+    assert color.name == "black"
+
+
+def test_a_lit_colour_is_still_read_as_a_colour():
+    # the guard above must not swallow vehicles that are genuinely coloured
+    color = estimate_color(solid_frame((200, 70, 60)), BBOX)
     assert color is not None
     assert color.name == "blue"
 
