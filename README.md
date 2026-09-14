@@ -6,10 +6,11 @@ a box in that colour with the plate next to it.
 
 ![Dashcam clip: both plates read, boxes coloured by vehicle](docs/dashcam.jpg)
 
-![Dense traffic clip](docs/dense_traffic.jpg)
+![Dense traffic clip: eight vehicles tracked, plate KE15NCC read](docs/dense_traffic.jpg)
 
-The second frame also shows the current limits: the two silver cars are labelled `white` and
-the dark van on the right is not detected. See [Limitations](#limitations).
+The second frame also shows the weakest part: the silver cars (IDs 52 and 42) are labelled
+`white`.
+See [Limitations](#limitations).
 
 ## Task coverage
 
@@ -419,7 +420,9 @@ What I would do for a real deployment, in this order:
   the other). The next step would be a small classifier (for example MobileNetV3) fine-tuned on a
   public vehicle colour dataset on the vehicle crops, with the 30 labelled vehicles as the test
   set. It runs a few times per vehicle, so it would barely affect speed.
-- **Detection** uses COCO weights. The dark tow van in the dense clip is missed. Fine-tuning on
+- **Detection** uses COCO weights. A dark tow van in the dense clip is missed for a while: it is
+  seen as a truck at 0.49 confidence, just under the 0.5 threshold. A roadside sign is sometimes
+  boxed as a vehicle; it never gets a plate, because it does not move. Fine-tuning on
   traffic-camera data or a larger model would help.
 - **IDs** come from ByteTrack without re-identification: a vehicle hidden for more than about a
   second, or leaving and coming back, gets a new ID.
