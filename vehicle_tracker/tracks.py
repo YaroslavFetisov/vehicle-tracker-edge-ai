@@ -244,7 +244,11 @@ class TrackRegistry:
     def _needs_plate(self, state: TrackState, detection: Detection, frame_index: int) -> bool:
         if state.plate_attempts >= self._max_plate_attempts:
             return False
-        if state.plate_score >= self._confident_plate_score:
+        # a high score alone is not settled while a one character rival is close behind it
+        if (
+            state.plate_score >= self._confident_plate_score
+            and state.plate_score - state.runner_up_score >= self._min_plate_lead
+        ):
             return False
 
         _, y1, _, y2 = detection.bbox

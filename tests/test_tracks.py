@@ -168,6 +168,15 @@ def test_ocr_stops_once_the_answer_is_settled():
     assert registry.due_for_plate(10, [detection()]) == []
 
 
+def test_ocr_goes_on_while_a_rival_shadows_a_high_score():
+    registry = TrackRegistry(plate_interval=1, confident_plate_score=2.0, min_plate_lead=0.9)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index, text in enumerate(["CF5775", "CF5715"] * 3):
+        registry.record_plate(1, frame_index, reading(text))
+
+    assert registry.due_for_plate(10, [detection()]) == [detection()]
+
+
 def test_ocr_gives_up_after_enough_failed_attempts():
     registry = TrackRegistry(plate_interval=1, max_plate_attempts=3)
     registry.update(0, solid_frame(RED), [detection()])
