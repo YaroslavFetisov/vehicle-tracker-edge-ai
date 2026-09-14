@@ -15,9 +15,12 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY requirements.txt ./
-# both opencv packages provide cv2; without a display the headless one belongs here
+# both opencv packages provide cv2, and ultralytics pulls in the windowed one, which needs libGL;
+# removing it deletes the shared cv2 files, so the headless build is reinstalled afterwards
 RUN sed '/^opencv-python==/d' requirements.txt > requirements-image.txt \
- && pip install -r requirements-image.txt opencv-python-headless==5.0.0.93
+ && pip install -r requirements-image.txt opencv-python-headless==5.0.0.93 \
+ && pip uninstall -y opencv-python \
+ && pip install --force-reinstall --no-deps opencv-python-headless==5.0.0.93
 
 COPY vehicle_tracker ./vehicle_tracker
 COPY scripts ./scripts
