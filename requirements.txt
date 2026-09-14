@@ -3,6 +3,8 @@
 torch==2.13.0
 torchvision==0.28.0
 ultralytics==8.4.150
+# ByteTrack needs it, and ultralytics would otherwise pip install it on the first tracked frame
+lap==0.5.13
 # the plate model packages pull in opencv-python-headless, which may replace this one;
 # if no window opens: pip install --force-reinstall opencv-python
 opencv-python==5.0.0.93
