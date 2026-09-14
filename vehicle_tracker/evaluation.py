@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+import csv
+import io
+from collections import Counter
+from collections.abc import Collection, Iterable
+from dataclasses import dataclass, field
 
 # OpenALPR annotation line: image name, plate box (x, y, width, height), plate text
 ANNOTATION_FIELDS = 6
@@ -115,4 +118,80 @@ def score(comparisons: Iterable[Comparison]) -> OcrScore:
     result = OcrScore()
     for comparison in comparisons:
         result.add(comparison.expected, comparison.actual)
+    return result
+
+
+COLOR_LABEL_FIELDS = ("vehicle", "clip", "frame", "x1", "y1", "x2", "y2", "accepted")
+ACCEPTED_SEPARATOR = "|"
+
+
+@dataclass(frozen=True)
+class ColorLabel:
+    """One crop of a labelled vehicle, with every colour name a person would accept for it."""
+
+    vehicle: str
+    clip: str
+    frame: int
+    bbox: tuple[int, int, int, int]
+    accepted: frozenset[str]
+
+
+def parse_color_labels(content: str, known_colors: Collection[str]) -> list[ColorLabel]:
+    reader = csv.DictReader(io.StringIO(content))
+    if tuple(reader.fieldnames or ()) != COLOR_LABEL_FIELDS:
+        raise ValueError(f"expected the columns {', '.join(COLOR_LABEL_FIELDS)}")
+
+    labels = []
+    for row in reader:
+        accepted = frozenset(name for name in row["accepted"].split(ACCEPTED_SEPARATOR) if name)
+        # a misspelt name would quietly count every crop of that vehicle as wrong
+        unknown = sorted(accepted - set(known_colors))
+        if not accepted or unknown:
+            raise ValueError(f"bad accepted colours for {row['vehicle']}: {row['accepted']!r}")
+        bbox = (int(row["x1"]), int(row["y1"]), int(row["x2"]), int(row["y2"]))
+        labels.append(ColorLabel(row["vehicle"], row["clip"], int(row["frame"]), bbox, accepted))
+    return labels
+
+
+@dataclass
+class ColorScore:
+    """Accuracy per crop, and per vehicle after the majority vote the tracker takes."""
+
+    crops: int = 0
+    correct_crops: int = 0
+    vehicles: int = 0
+    correct_vehicles: int = 0
+    # vehicle -> the colour its crops voted for, None when no crop could be classified
+    misjudged: dict[str, str | None] = field(default_factory=dict)
+
+    @property
+    def crop_accuracy(self) -> float:
+        return 0.0 if self.crops == 0 else self.correct_crops / self.crops
+
+    @property
+    def vehicle_accuracy(self) -> float:
+        return 0.0 if self.vehicles == 0 else self.correct_vehicles / self.vehicles
+
+
+def score_colors(predictions: Iterable[tuple[ColorLabel, str | None]]) -> ColorScore:
+    result = ColorScore()
+    votes: dict[str, Counter[str]] = {}
+    accepted: dict[str, frozenset[str]] = {}
+
+    for label, predicted in predictions:
+        result.crops += 1
+        if predicted in label.accepted:
+            result.correct_crops += 1
+        accepted[label.vehicle] = label.accepted
+        vehicle_votes = votes.setdefault(label.vehicle, Counter())
+        if predicted is not None:
+            vehicle_votes[predicted] += 1
+
+    for vehicle, vehicle_votes in votes.items():
+        result.vehicles += 1
+        majority = vehicle_votes.most_common(1)[0][0] if vehicle_votes else None
+        if majority in accepted[vehicle]:
+            result.correct_vehicles += 1
+        else:
+            result.misjudged[vehicle] = majority
     return result

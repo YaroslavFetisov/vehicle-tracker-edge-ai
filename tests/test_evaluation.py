@@ -3,13 +3,16 @@ from __future__ import annotations
 import pytest
 
 from vehicle_tracker.evaluation import (
+    ColorLabel,
     Comparison,
     OcrScore,
     closest,
     edit_distance,
     fold_ambiguous,
     parse_annotation,
+    parse_color_labels,
     score,
+    score_colors,
 )
 
 
@@ -158,3 +161,88 @@ def test_a_set_of_comparisons_is_scored_together():
     assert result.exact == 1
     assert result.readings == 2
     assert result.character_error_rate == pytest.approx(7 / 18)
+
+
+COLORS = ("black", "grey", "white", "red", "blue")
+HEADER = "vehicle,clip,frame,x1,y1,x2,y2,accepted\n"
+
+
+def color_label(vehicle: str, *accepted: str) -> ColorLabel:
+    return ColorLabel(vehicle, "clip.mp4", 0, (0, 0, 10, 10), frozenset(accepted))
+
+
+def test_a_label_row_yields_its_box_and_accepted_colours():
+    content = HEADER + "highway_118,highway_traffic.mp4,42,10,20,110,220,grey|white\n"
+
+    assert parse_color_labels(content, COLORS) == [
+        ColorLabel(
+            "highway_118",
+            "highway_traffic.mp4",
+            42,
+            (10, 20, 110, 220),
+            frozenset({"grey", "white"}),
+        )
+    ]
+
+
+def test_a_misspelt_colour_is_rejected_instead_of_scored_as_wrong():
+    with pytest.raises(ValueError, match="gray"):
+        parse_color_labels(HEADER + "a,clip.mp4,0,0,0,10,10,gray\n", COLORS)
+
+
+def test_a_row_without_an_accepted_colour_is_rejected():
+    with pytest.raises(ValueError, match="bad accepted"):
+        parse_color_labels(HEADER + "a,clip.mp4,0,0,0,10,10,\n", COLORS)
+
+
+def test_a_file_with_other_columns_is_rejected():
+    with pytest.raises(ValueError, match="columns"):
+        parse_color_labels("vehicle,frame,colour\na,0,red\n", COLORS)
+
+
+def test_any_accepted_colour_counts_as_correct():
+    silver = color_label("a", "grey", "white")
+    result = score_colors([(silver, "grey"), (silver, "white")])
+
+    assert result.correct_crops == 2
+    assert result.vehicle_accuracy == 1.0
+
+
+def test_a_vehicle_is_judged_by_the_majority_of_its_crops():
+    red = color_label("a", "red")
+    result = score_colors([(red, "red"), (red, "grey"), (red, "red")])
+
+    assert result.crop_accuracy == pytest.approx(2 / 3)
+    assert result.correct_vehicles == 1
+
+
+def test_a_wrong_majority_is_listed_with_what_it_voted_for():
+    blue = color_label("a", "blue")
+    result = score_colors([(blue, "black"), (blue, "black"), (blue, "blue")])
+
+    assert result.vehicle_accuracy == 0.0
+    assert result.misjudged == {"a": "black"}
+
+
+def test_a_vehicle_no_crop_could_classify_counts_as_wrong():
+    white = color_label("a", "white")
+    result = score_colors([(white, None), (white, None)])
+
+    assert result.crops == 2
+    assert result.correct_crops == 0
+    assert result.misjudged == {"a": None}
+
+
+def test_vehicles_are_scored_apart():
+    result = score_colors([(color_label("a", "red"), "red"), (color_label("b", "blue"), "white")])
+
+    assert result.vehicles == 2
+    assert result.correct_vehicles == 1
+    assert result.misjudged == {"b": "white"}
+
+
+def test_an_empty_colour_run_reports_zero_instead_of_dividing_by_zero():
+    empty = score_colors([])
+
+    assert empty.crop_accuracy == 0.0
+    assert empty.vehicle_accuracy == 0.0
