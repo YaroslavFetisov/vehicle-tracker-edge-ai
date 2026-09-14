@@ -33,10 +33,15 @@ ONNX_ERROR_SEVERITY = 3
 
 NEUTRAL_OCR_CONFIDENCE = 1.0
 
+ALLOW_SPINNING = "session.intra_op.allow_spinning"
+
 
 def session_options() -> onnxruntime.SessionOptions:
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = plate_model_threads(os.cpu_count())
+    # pool threads busy-wait after every run by default, taking the cores the detector needs:
+    # on four cores 5.2 fps with spinning and 13.9 without, reading the same plates
+    options.add_session_config_entry(ALLOW_SPINNING, "0")
     return options
 
 
