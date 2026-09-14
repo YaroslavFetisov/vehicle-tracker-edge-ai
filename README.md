@@ -135,18 +135,18 @@ The image has no display, so `--no-display` is required. The container stops on 
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A[RTSP stream] --> B[Reader thread<br/>keeps newest frame]
-    B --> C[YOLO11n + ByteTrack<br/>every frame]
-    C --> D[Track registry<br/>state per vehicle]
-    D -->|a few frames per vehicle| E[Colour<br/>HSV rules]
-    D -->|scheduled, max 2 per frame| F[Plate detector<br/>YOLOv9-t 384]
-    F --> G[OCR<br/>cct-xs]
-    G --> H[Vote per track]
-    E --> I[Overlay and log]
-    H --> I
-```
+Each frame goes through these stages:
+
+1. **Reader thread** takes the newest frame from the RTSP stream.
+2. **YOLO11n + ByteTrack** find vehicles and give them IDs, on every frame.
+3. **Track registry** keeps state per vehicle and decides what still needs computing.
+4. **Colour** is estimated on a few frames per vehicle and voted on.
+5. **Plate detector and OCR** run on a schedule, at most two vehicles per frame, and the
+   readings are voted on per vehicle.
+6. **Overlay and log**: the box in the vehicle colour, its ID and plate, and one log line per
+   vehicle.
+
+The sections below explain each stage and why it is built this way.
 
 ### 1. Video input
 
