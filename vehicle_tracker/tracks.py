@@ -63,6 +63,10 @@ MIN_REPORTED_PLATE_SCORE = 1.5
 # legible plate scores 0.9 to 1.0, so this asks the winner to be one whole reading ahead.
 PLATE_LEAD = 0.9
 
+# Stated outright rather than implied by the score: a local-format reading weighs 1.5 and the
+# recognizer does return a confidence of exactly 1.0, so one frame alone could clear the bar.
+MIN_AGREEING_READINGS = 2
+
 PLATE_CONFIDENT_SCORE = 5.0
 
 
@@ -77,12 +81,14 @@ class TrackState:
     last_seen: int
     min_plate_score: float
     min_plate_lead: float
+    min_agreeing_readings: int
     last_plate_frame: int
     plate_budget_height: int
     first_center: tuple[float, float]
     color_votes: Counter[VehicleColor] = field(default_factory=Counter)
     last_color_frame: int | None = None
     plate_votes: dict[str, float] = field(default_factory=dict)
+    plate_hits: Counter[str] = field(default_factory=Counter)
     plate_attempts: int = 0
     # the text this vehicle was last reported under, so that a plate is announced once and
     # not on every frame the vehicle stays in view
@@ -107,6 +113,8 @@ class TrackState:
         if not self.moved or not self.plate_votes:
             return None
         best = max(self.plate_votes, key=lambda text: self.plate_votes[text])
+        if self.plate_hits[best] < self.min_agreeing_readings:
+            return None
         if self.plate_votes[best] < self.min_plate_score:
             return None
         if self.plate_votes[best] - self.runner_up_score < self.min_plate_lead:
@@ -172,6 +180,7 @@ class TrackRegistry:
         confident_plate_score: float = PLATE_CONFIDENT_SCORE,
         min_plate_score: float = MIN_REPORTED_PLATE_SCORE,
         min_plate_lead: float = PLATE_LEAD,
+        min_agreeing_readings: int = MIN_AGREEING_READINGS,
         retry_growth: float = PLATE_RETRY_GROWTH,
         min_drift_fraction: float = MIN_DRIFT_FRACTION,
     ) -> None:
@@ -186,6 +195,7 @@ class TrackRegistry:
         self._confident_plate_score = confident_plate_score
         self._min_plate_score = min_plate_score
         self._min_plate_lead = min_plate_lead
+        self._min_agreeing_readings = min_agreeing_readings
         self._retry_growth = retry_growth
         self._min_drift_fraction = min_drift_fraction
         self._frame_height = 0
@@ -215,6 +225,7 @@ class TrackRegistry:
                     last_seen=frame_index,
                     min_plate_score=self._min_plate_score,
                     min_plate_lead=self._min_plate_lead,
+                    min_agreeing_readings=self._min_agreeing_readings,
                     last_plate_frame=self._staggered_start(detection.track_id, frame_index),
                     plate_budget_height=y2 - y1,
                     first_center=center(detection.bbox),
@@ -280,6 +291,7 @@ class TrackRegistry:
         if reading is not None:
             weight = vote_weight(reading.text) * reading.ocr_confidence
             state.plate_votes[reading.text] = state.plate_votes.get(reading.text, 0.0) + weight
+            state.plate_hits[reading.text] += 1
 
     def _needs_plate(self, state: TrackState, detection: Detection, frame_index: int) -> bool:
         if state.plate_attempts >= self._max_plate_attempts:

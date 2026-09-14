@@ -26,6 +26,7 @@ def make_state(track_id: int, color: str) -> TrackState:
         last_seen=0,
         min_plate_score=2.0,
         min_plate_lead=0.0,
+        min_agreeing_readings=1,
         last_plate_frame=0,
         plate_budget_height=BOX[3] - BOX[1],
         first_center=(0.0, 0.0),
@@ -92,6 +93,7 @@ def test_label_of_a_vehicle_at_the_frame_edge_stays_visible():
     )
     state = make_state(3, "white")
     state.plate_votes["AA1234BB"] = 5.0
+    state.plate_hits["AA1234BB"] = 5
 
     draw_detections(frame, [at_edge], {3: state})
 

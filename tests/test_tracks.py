@@ -4,7 +4,12 @@ import numpy as np
 
 from vehicle_tracker.detection import Detection
 from vehicle_tracker.plate import PlateReading
-from vehicle_tracker.tracks import TrackRegistry, carries_a_plate, newly_confirmed
+from vehicle_tracker.tracks import (
+    MIN_REPORTED_PLATE_SCORE,
+    TrackRegistry,
+    carries_a_plate,
+    newly_confirmed,
+)
 
 FRAME_SIZE = 200
 BBOX = (40, 40, 160, 160)
@@ -247,7 +252,7 @@ def test_plate_majority_wins_over_scattered_misreadings():
 
 
 def test_local_format_breaks_a_tie():
-    registry = TrackRegistry(min_plate_score=0.0, min_plate_lead=0.0)
+    registry = TrackRegistry(min_plate_score=0.0, min_plate_lead=0.0, min_agreeing_readings=1)
     registry.update(0, solid_frame(RED), [detection()])
     registry.record_plate(1, 0, reading("AA1234BB"))
     registry.record_plate(1, 1, reading("CF57751"))
@@ -353,6 +358,21 @@ def test_a_confirmed_plate_is_reported_once_and_not_again():
 
     assert [state.track_id for state, _ in newly_confirmed(states)] == [1]
     assert newly_confirmed(states) == []
+
+
+def test_one_crisp_reading_in_the_local_format_is_still_only_one_frame():
+    # 1.5 for the format times a confidence of exactly 1.0 used to clear the score on its own
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("AA1234BB", confidence=1.0))
+
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert states[1].plate_score >= MIN_REPORTED_PLATE_SCORE
+    assert states[1].plate is None
+
+    registry.record_plate(1, 1, reading("AA1234BB", confidence=1.0))
+    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert states[1].plate == "AA1234BB"
 
 
 def test_a_winner_that_a_rival_is_shadowing_is_not_reported():
