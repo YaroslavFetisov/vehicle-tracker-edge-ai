@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from vehicle_tracker.runtime import (
+    CPU_PROVIDER,
+    CUDA_PROVIDER,
     MAX_PLATE_MODEL_THREADS,
     gui_is_missing,
     plate_model_threads,
@@ -35,16 +37,24 @@ def test_a_very_large_machine_does_not_hand_the_plate_models_everything():
     assert plate_model_threads(256) == MAX_PLATE_MODEL_THREADS
 
 
+GPU_BUILD = [CUDA_PROVIDER, CPU_PROVIDER]
+CPU_BUILD = ["AzureExecutionProvider", CPU_PROVIDER]
+
+
 def test_asking_for_cuda_keeps_the_cpu_provider_as_a_fallback():
-    assert providers_for("cuda") == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert providers_for("cuda", GPU_BUILD) == [CUDA_PROVIDER, CPU_PROVIDER]
+
+
+def test_asking_for_cuda_on_a_cpu_build_does_not_request_a_missing_provider():
+    assert providers_for("cuda", CPU_BUILD) == [CPU_PROVIDER]
 
 
 def test_cpu_is_pinned_to_the_cpu_provider():
-    assert providers_for("cpu") == ["CPUExecutionProvider"]
+    assert providers_for("cpu", GPU_BUILD) == [CPU_PROVIDER]
 
 
 def test_auto_leaves_the_choice_to_the_runtime():
-    assert providers_for("auto") is None
+    assert providers_for("auto", GPU_BUILD) is None
 
 
 def test_a_headless_build_is_recognised_before_it_fails_on_a_frame():

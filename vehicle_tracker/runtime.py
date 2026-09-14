@@ -11,12 +11,19 @@ def plate_model_threads(cores: int | None) -> int:
     return max(1, min(MAX_PLATE_MODEL_THREADS, (cores or 1) // CORES_PER_PLATE_THREAD))
 
 
-def providers_for(device: str) -> list[str] | None:
+CUDA_PROVIDER = "CUDAExecutionProvider"
+CPU_PROVIDER = "CPUExecutionProvider"
+
+
+def providers_for(device: str, available: list[str]) -> list[str] | None:
     if device == "cuda":
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    if device == "cpu":
-        return ["CPUExecutionProvider"]
-    return None
+        wanted = [CUDA_PROVIDER, CPU_PROVIDER]
+    elif device == "cpu":
+        wanted = [CPU_PROVIDER]
+    else:
+        return None
+    # a provider missing from this onnxruntime build makes every session print a warning
+    return [provider for provider in wanted if provider in available]
 
 
 # The plate model packages pull in opencv-python-headless, which can replace opencv-python

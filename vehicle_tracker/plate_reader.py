@@ -11,7 +11,7 @@ from fast_plate_ocr import LicensePlateRecognizer
 from open_image_models import create_detector
 
 from vehicle_tracker.plate import PlateReading, normalize
-from vehicle_tracker.runtime import plate_model_threads, providers_for
+from vehicle_tracker.runtime import CUDA_PROVIDER, plate_model_threads, providers_for
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +42,14 @@ def session_options() -> onnxruntime.SessionOptions:
 class PlateReader:
     def __init__(self, *, device: str = "auto") -> None:
         onnxruntime.set_default_logger_severity(ONNX_ERROR_SEVERITY)
-        # the severity above also hides the runtime's own warning about falling back to the CPU
-        if (
-            device == "cuda"
-            and "CUDAExecutionProvider" not in onnxruntime.get_available_providers()
-        ):
+        available = onnxruntime.get_available_providers()
+        if device == "cuda" and CUDA_PROVIDER not in available:
             logger.warning("no CUDA execution provider available, plate models run on the CPU")
+        providers = providers_for(device, available)
         options = session_options()
-        self._detector = create_detector(
-            DETECTION_MODEL, providers=providers_for(device), sess_options=options
-        )
+        self._detector = create_detector(DETECTION_MODEL, providers=providers, sess_options=options)
         self._recognizer = LicensePlateRecognizer(
-            hub_ocr_model=OCR_MODEL, device=device, sess_options=options
+            hub_ocr_model=OCR_MODEL, device=device, providers=providers, sess_options=options
         )
         self._expects_grayscale = self._recognizer.config.image_color_mode == "grayscale"
         logger.info(
