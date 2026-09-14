@@ -3,6 +3,9 @@
 torch==2.13.0
 torchvision==0.28.0
 ultralytics==8.4.150
+# The two plate model packages below depend on opencv-python-headless, which provides the
+# same cv2 module as this one and may end up replacing it. The program says so on startup if
+# that happens; the fix is pip install --force-reinstall opencv-python.
 opencv-python==5.0.0.93
 numpy==2.5.2
 onnxruntime==1.30.0

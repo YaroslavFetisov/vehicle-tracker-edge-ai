@@ -1,4 +1,5 @@
-"""How much of the machine the onnx models may use, and which providers they ask for."""
+"""How much of the machine the onnx models may use, which providers they ask for, and
+whether the opencv build that came with them can open a window at all."""
 
 from __future__ import annotations
 
@@ -22,3 +23,24 @@ def providers_for(device: str) -> list[str] | None:
     if device == "cpu":
         return ["CPUExecutionProvider"]
     return None
+
+
+# Both plate model packages depend on opencv-python-headless, which ships the same cv2 module
+# as opencv-python and overwrites it, so which of the two a fresh install ends up with is
+# decided by the order pip happens to resolve them in. The headless build has no window
+# support compiled in and raises "the function is not implemented" on the first frame, which
+# is a poor way to learn this when displaying is the default mode. A build names its window
+# backend on the GUI line of its build information - WIN32UI, GTK2, COCOA, QT - and says NONE
+# when it has none. Only that outright NONE counts as missing here: a report this does not
+# recognise is left alone and fails later with opencv's own message, if it fails at all.
+NO_GUI = "NONE"
+GUI_FIELD = "GUI"
+
+
+def gui_is_missing(build_information: str) -> bool:
+    """Whether this OpenCV build states outright that it cannot open a window."""
+    for line in build_information.splitlines():
+        field, separator, backend = line.partition(":")
+        if separator and field.strip() == GUI_FIELD:
+            return backend.strip().upper() == NO_GUI
+    return False

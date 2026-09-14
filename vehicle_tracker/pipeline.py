@@ -12,6 +12,7 @@ from vehicle_tracker.detector import VehicleDetector
 from vehicle_tracker.metrics import Metrics
 from vehicle_tracker.overlay import draw_detections, draw_status
 from vehicle_tracker.plate_reader import PlateReader
+from vehicle_tracker.runtime import gui_is_missing
 from vehicle_tracker.tracks import TrackRegistry, TrackState, carries_a_plate, newly_confirmed
 from vehicle_tracker.video_source import VideoSource
 from vehicle_tracker.video_writer import VideoWriter
@@ -83,6 +84,15 @@ def build_pipeline(config: Config, *, registry: TrackRegistry, metrics: Metrics)
 
 
 def run(config: Config) -> None:
+    # checked before the models load, so that a headless opencv costs a second rather than
+    # the whole start up and an assertion from inside the first imshow
+    if config.display and gui_is_missing(cv2.getBuildInformation()):
+        raise RuntimeError(
+            "this opencv build cannot open a window: the plate model packages depend on "
+            "opencv-python-headless, which replaces opencv-python. Either pass --no-display "
+            "or run: pip install --force-reinstall opencv-python"
+        )
+
     metrics = Metrics()
     registry = TrackRegistry()
     pipeline = build_pipeline(config, registry=registry, metrics=metrics)
