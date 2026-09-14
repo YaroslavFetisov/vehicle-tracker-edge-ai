@@ -101,6 +101,11 @@ class Metrics:
         return f"{self._fps:.0f} fps   {stages}"
 
     def summary(self) -> list[str]:
+        # A camera that never opened has nothing to account for, and a table of zeroes
+        # printed above the error that ended the run only buries it.
+        if self._frames == 0:
+            return ["no frames processed"]
+
         lines = [
             f"{self._frames} frames in {self._seconds:.1f}s, {self.average_fps:.1f} fps average",
             f"frames without vehicles: {self._frames_without_vehicles}",

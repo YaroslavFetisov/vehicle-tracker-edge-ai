@@ -112,6 +112,11 @@ def test_summary_reports_every_stage():
     assert "1 frames" in summary
 
 
+def test_a_run_that_never_got_a_frame_prints_no_table():
+    # a camera that fails to open ends here, and an empty table would bury the error
+    assert Metrics().summary() == ["no frames processed"]
+
+
 def test_a_nested_stage_is_listed_after_the_stage_that_contains_it():
     metrics = Metrics()
     metrics.record("plate read", 0.090, nested=True)
