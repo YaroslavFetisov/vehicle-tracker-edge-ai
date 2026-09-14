@@ -13,7 +13,7 @@ from vehicle_tracker.metrics import Metrics
 from vehicle_tracker.overlay import draw_detections, draw_status
 from vehicle_tracker.plate_reader import PlateReader
 from vehicle_tracker.runtime import gui_is_missing
-from vehicle_tracker.tracks import TrackRegistry, TrackState, carries_a_plate, newly_confirmed
+from vehicle_tracker.tracks import TrackRegistry, TrackState, carries_a_plate
 from vehicle_tracker.video_source import VideoSource
 from vehicle_tracker.video_writer import VideoWriter
 
@@ -100,7 +100,7 @@ def run(config: Config) -> None:
             for frame_index, frame in enumerate(source):
                 frame_started = time.perf_counter()
                 states = pipeline.process(frame_index, frame)
-                report(states)
+                report(registry.plates_to_announce(states))
 
                 # stream filter: frames without a known plate are analysed but not shown
                 if not config.filter_stream or carries_a_plate(states):
@@ -124,6 +124,7 @@ def run(config: Config) -> None:
             writer.close()
         if config.display:
             cv2.destroyAllWindows()
+        report(registry.unannounced_plates())
         logger.info("tracks seen: %d", registry.total_tracks)
         if config.filter_stream:
             logger.info("frames kept by the filter: %d of %d", kept, metrics.frames)
@@ -131,12 +132,7 @@ def run(config: Config) -> None:
             logger.info("%s", line)
 
 
-def report(states: dict[int, TrackState]) -> None:
-    for state, previous in newly_confirmed(states):
-        if previous is not None:
-            logger.info(
-                "vehicle %d: plate %s corrected to %s", state.track_id, previous, state.plate
-            )
-            continue
+def report(states: list[TrackState]) -> None:
+    for state in states:
         color = state.color.name if state.color is not None else "unknown"
         logger.info("vehicle %d: %s, plate %s", state.track_id, color, state.plate)

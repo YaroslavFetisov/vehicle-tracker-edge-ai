@@ -56,7 +56,7 @@ class TrackState:
     plate_votes: dict[str, float] = field(default_factory=dict)
     plate_hits: Counter[str] = field(default_factory=Counter)
     plate_attempts: int = 0
-    announced_plate: str | None = None
+    announced: bool = False
     # latched, so a car waiting at a barrier keeps its plate
     moved: bool = False
 
@@ -101,18 +101,6 @@ def carries_a_plate(states: dict[int, TrackState]) -> bool:
     return any(state.plate is not None for state in states.values())
 
 
-def newly_confirmed(states: dict[int, TrackState]) -> list[tuple[TrackState, str | None]]:
-    """Vehicles whose plate was just confirmed or changed, with the text announced before."""
-    announcements = []
-    for state in states.values():
-        plate = state.plate
-        if plate is None or plate == state.announced_plate:
-            continue
-        announcements.append((state, state.announced_plate))
-        state.announced_plate = plate
-    return announcements
-
-
 class TrackRegistry:
     """Colour and plate belong to the vehicle, not the frame, so both are voted on per track."""
 
@@ -134,6 +122,7 @@ class TrackRegistry:
         min_drift_fraction: float = MIN_DRIFT_FRACTION,
     ) -> None:
         self._states: dict[int, TrackState] = {}
+        self._departed: list[TrackState] = []
         self._color_interval = color_interval
         self._max_color_samples = max_color_samples
         self._expiry_frames = expiry_frames
@@ -208,6 +197,43 @@ class TrackRegistry:
         due.sort(key=lambda detection: self._states[detection.track_id].last_plate_frame)
         return due[: self._max_plate_reads_per_frame]
 
+    def plates_to_announce(self, states: dict[int, TrackState]) -> list[TrackState]:
+        """Plates that settled on this frame, and the best reading of vehicles that left before.
+
+        A reported plate can still lose to a closer reading, a settled one is no longer read.
+        """
+        return self._announce(
+            [
+                state
+                for state in states.values()
+                if not state.announced and state.plate is not None and self._is_settled(state)
+            ]
+        )
+
+    def unannounced_plates(self) -> list[TrackState]:
+        """Best readings of the vehicles still in the scene when the stream ends."""
+        return self._announce(
+            [
+                state
+                for state in self._states.values()
+                if not state.announced and state.plate is not None
+            ]
+        )
+
+    def _announce(self, ready: list[TrackState]) -> list[TrackState]:
+        ready.extend(self._departed)
+        self._departed.clear()
+        for state in ready:
+            state.announced = True
+        return ready
+
+    def _is_settled(self, state: TrackState) -> bool:
+        # a high score alone is not settled while a one character rival is close behind it
+        return (
+            state.plate_score >= self._confident_plate_score
+            and state.plate_score - state.runner_up_score >= self._min_plate_lead
+        )
+
     def _note_movement(self, state: TrackState, bbox: tuple[int, int, int, int]) -> None:
         if state.moved:
             return
@@ -244,11 +270,7 @@ class TrackRegistry:
     def _needs_plate(self, state: TrackState, detection: Detection, frame_index: int) -> bool:
         if state.plate_attempts >= self._max_plate_attempts:
             return False
-        # a high score alone is not settled while a one character rival is close behind it
-        if (
-            state.plate_score >= self._confident_plate_score
-            and state.plate_score - state.runner_up_score >= self._min_plate_lead
-        ):
+        if self._is_settled(state):
             return False
 
         _, y1, _, y2 = detection.bbox
@@ -271,4 +293,6 @@ class TrackRegistry:
             if frame_index - state.last_seen > self._expiry_frames
         ]
         for track_id in stale:
-            del self._states[track_id]
+            state = self._states.pop(track_id)
+            if not state.announced and state.plate is not None:
+                self._departed.append(state)

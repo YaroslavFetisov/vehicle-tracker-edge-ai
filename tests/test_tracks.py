@@ -8,7 +8,6 @@ from vehicle_tracker.tracks import (
     MIN_REPORTED_PLATE_SCORE,
     TrackRegistry,
     carries_a_plate,
-    newly_confirmed,
 )
 
 FRAME_SIZE = 200
@@ -357,15 +356,15 @@ def test_plate_is_unknown_before_any_reading():
     assert states[1].plate is None
 
 
-def test_a_confirmed_plate_is_reported_once_and_not_again():
-    registry = TrackRegistry(min_plate_score=2.0)
+def test_a_settled_plate_is_announced_once_and_not_again():
+    registry = TrackRegistry(confident_plate_score=2.0)
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index in range(3):
         registry.record_plate(1, frame_index, reading("CF5775"))
     states = registry.update(3, solid_frame(RED), [detection(shift=TRAVELLED)])
 
-    assert [state.track_id for state, _ in newly_confirmed(states)] == [1]
-    assert newly_confirmed(states) == []
+    assert [state.plate for state in registry.plates_to_announce(states)] == ["CF5775"]
+    assert registry.plates_to_announce(states) == []
 
 
 def test_one_crisp_reading_in_the_local_format_is_still_only_one_frame():
@@ -415,34 +414,55 @@ def test_two_readings_tied_at_the_top_report_nothing():
     assert states[1].plate is None
 
 
-def test_a_plate_beaten_by_a_closer_reading_is_announced_as_a_correction():
-    registry = TrackRegistry(min_plate_score=1.5)
+def test_a_plate_that_can_still_be_overtaken_is_shown_but_not_announced():
+    # the case from the dashcam clip on the cpu: CF5715 led for a moment before CF5775 caught up
+    registry = TrackRegistry(min_plate_score=1.5, confident_plate_score=5.0)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index, text in enumerate(["CF5715"] * 4 + ["CF5775"] * 2):
+        registry.record_plate(1, frame_index, reading(text))
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+
+    assert states[1].plate == "CF5715"
+    assert registry.plates_to_announce(states) == []
+
+    for frame_index in range(6, 12):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
+
+    assert [state.plate for state in registry.plates_to_announce(states)] == ["CF5775"]
+
+
+def test_a_vehicle_that_leaves_before_its_plate_settles_is_announced_on_leaving():
+    registry = TrackRegistry(expiry_frames=10, confident_plate_score=5.0)
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index in range(2):
-        registry.record_plate(1, frame_index, reading("CF5795"))
-    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
-    assert [state.plate for state, _ in newly_confirmed(states)] == ["CF5795"]
-
-    for frame_index in range(2, 6):
         registry.record_plate(1, frame_index, reading("CF5775"))
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert registry.plates_to_announce(states) == []
 
-    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
-    assert [(state.plate, previous) for state, previous in newly_confirmed(states)] == [
-        ("CF5775", "CF5795")
-    ]
+    states = registry.update(50, solid_frame(RED), [detection(track_id=2)])
+    assert [state.plate for state in registry.plates_to_announce(states)] == ["CF5775"]
+    assert registry.unannounced_plates() == []
 
 
-def test_a_plate_that_keeps_winning_is_not_announced_again():
-    registry = TrackRegistry(min_plate_score=1.5)
+def test_a_vehicle_without_a_plate_is_not_announced_on_leaving():
+    registry = TrackRegistry(expiry_frames=10)
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("CF5775"))
+    states = registry.update(50, solid_frame(RED), [detection(track_id=2)])
+
+    assert registry.plates_to_announce(states) == []
+
+
+def test_plates_still_in_the_scene_are_announced_when_the_stream_ends():
+    registry = TrackRegistry(confident_plate_score=5.0)
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index in range(2):
         registry.record_plate(1, frame_index, reading("CF5775"))
-    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
-    newly_confirmed(states)
+    registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
 
-    registry.record_plate(1, 3, reading("CF5775"))
-    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
-    assert newly_confirmed(states) == []
+    assert [state.plate for state in registry.unannounced_plates()] == ["CF5775"]
+    assert registry.unannounced_plates() == []
 
 
 def test_a_frame_with_a_known_plate_passes_the_stream_filter():
@@ -472,7 +492,8 @@ def test_a_vehicle_without_a_settled_plate_is_not_reported():
     registry.record_plate(1, 0, reading("CF5775"))
     states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
 
-    assert newly_confirmed(states) == []
+    assert registry.plates_to_announce(states) == []
+    assert registry.unannounced_plates() == []
 
 
 def test_vehicles_that_left_the_scene_are_still_counted():
