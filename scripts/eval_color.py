@@ -1,8 +1,8 @@
 """Measure colour accuracy on hand labelled vehicles from the sample footage.
 
 The labels hold up to six crops per vehicle spread over its track, the way the pipeline samples
-a vehicle from every distance. A silver car is accepted as grey or white and a dark one as black
-or grey, since a person would accept either.
+a vehicle from every distance. A silver car counts as grey, never as white; a colour that sits
+between two names, such as a dark grey or a navy, accepts both.
 """
 
 from __future__ import annotations
