@@ -18,8 +18,15 @@ def solid_frame(bgr: tuple[int, int, int]) -> np.ndarray:
     return frame
 
 
-def detection(track_id: int = 1) -> Detection:
-    return Detection(track_id=track_id, bbox=BBOX, class_id=2, confidence=0.9)
+def detection(track_id: int = 1, shift: int = 0) -> Detection:
+    x1, y1, x2, y2 = BBOX
+    return Detection(
+        track_id=track_id, bbox=(x1 + shift, y1, x2 + shift, y2), class_id=2, confidence=0.9
+    )
+
+
+# BBOX is 120 pixels tall, so a tenth of its height is twelve and this clears the bar
+TRAVELLED = 20
 
 
 def test_majority_vote_survives_a_few_odd_frames():
@@ -235,17 +242,17 @@ def test_plate_majority_wins_over_scattered_misreadings():
     for frame_index, text in enumerate(["CF5775", "CF5775", "CF5775", "EF5775", "CF5715"]):
         registry.record_plate(1, frame_index, reading(text))
 
-    states = registry.update(1, solid_frame(RED), [detection()])
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
     assert states[1].plate == "CF5775"
 
 
 def test_local_format_breaks_a_tie():
-    registry = TrackRegistry(min_plate_score=0.0)
+    registry = TrackRegistry(min_plate_score=0.0, min_plate_lead=0.0)
     registry.update(0, solid_frame(RED), [detection()])
     registry.record_plate(1, 0, reading("AA1234BB"))
     registry.record_plate(1, 1, reading("CF57751"))
 
-    states = registry.update(2, solid_frame(RED), [detection()])
+    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
     assert states[1].plate == "AA1234BB"
 
 
@@ -254,7 +261,7 @@ def test_a_single_reading_is_not_reported_yet():
     registry.update(0, solid_frame(RED), [detection()])
     registry.record_plate(1, 0, reading("CF5775"))
 
-    states = registry.update(1, solid_frame(RED), [detection()])
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
     assert states[1].plate is None
 
 
@@ -264,8 +271,60 @@ def test_a_plate_is_reported_once_frames_agree():
     for frame_index in range(3):
         registry.record_plate(1, frame_index, reading("CF5775"))
 
-    states = registry.update(3, solid_frame(RED), [detection()])
+    states = registry.update(3, solid_frame(RED), [detection(shift=TRAVELLED)])
     assert states[1].plate == "CF5775"
+
+
+def test_a_box_that_never_travels_reports_no_plate():
+    # the identification number on a road sign reads perfectly on every frame, so without
+    # this the only plate the highway clip yields is street furniture
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(4):
+        registry.record_plate(1, frame_index, reading("9448A"))
+
+    states = registry.update(1, solid_frame(RED), [detection()])
+    assert states[1].plate_score > 0
+    assert states[1].plate is None
+
+
+def test_a_plate_is_reported_once_the_vehicle_has_travelled():
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(4):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+
+    assert registry.update(1, solid_frame(RED), [detection()])[1].plate is None
+    assert registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])[1].plate == "CF5775"
+
+
+def test_a_vehicle_that_stops_keeps_the_plate_it_earned():
+    # a car waiting at a barrier has still arrived under its own power
+    registry = TrackRegistry()
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(4):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+    registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+
+    states = registry.update(2, solid_frame(RED), [detection()])
+    assert states[1].plate == "CF5775"
+
+
+def test_travel_is_judged_against_the_vehicle_own_size():
+    frame = solid_frame(RED)
+    nudge = 5
+    distant = Detection(track_id=1, bbox=(0, 0, 30, 20), class_id=2, confidence=0.9)
+    near = Detection(track_id=1, bbox=(0, 0, 300, 200), class_id=2, confidence=0.9)
+
+    for vehicle, expected in ((distant, True), (near, False)):
+        x1, y1, x2, y2 = vehicle.bbox
+        later = Detection(
+            track_id=1, bbox=(x1 + nudge, y1, x2 + nudge, y2), class_id=2, confidence=0.9
+        )
+        registry = TrackRegistry()
+        registry.update(0, frame, [vehicle])
+
+        assert registry.update(1, frame, [later])[1].moved is expected
 
 
 def test_a_failed_reading_still_counts_as_an_attempt():
@@ -290,9 +349,72 @@ def test_a_confirmed_plate_is_reported_once_and_not_again():
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index in range(3):
         registry.record_plate(1, frame_index, reading("CF5775"))
-    states = registry.update(3, solid_frame(RED), [detection()])
+    states = registry.update(3, solid_frame(RED), [detection(shift=TRAVELLED)])
 
-    assert [state.track_id for state in newly_confirmed(states)] == [1]
+    assert [state.track_id for state, _ in newly_confirmed(states)] == [1]
+    assert newly_confirmed(states) == []
+
+
+def test_a_winner_that_a_rival_is_shadowing_is_not_reported():
+    # the rival readings of a plate differ from the winner by one character, so a pair of
+    # agreeing frames means nothing while another text is holding a pair of its own
+    registry = TrackRegistry(min_plate_score=1.5, min_plate_lead=0.9)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index, text in enumerate(["CF5775", "CF5775", "CF5715", "CF5715"]):
+        registry.record_plate(1, frame_index, reading(text))
+
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert states[1].plate_score >= 1.5
+    assert states[1].plate is None
+
+
+def test_a_winner_that_pulls_clear_is_reported():
+    registry = TrackRegistry(min_plate_score=1.5, min_plate_lead=0.9)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index, text in enumerate(["CF5775", "CF5775", "CF5715", "CF5715", "CF5775"]):
+        registry.record_plate(1, frame_index, reading(text))
+
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert states[1].plate == "CF5775"
+
+
+def test_two_readings_tied_at_the_top_report_nothing():
+    registry = TrackRegistry(min_plate_score=0.0, min_plate_lead=0.9)
+    registry.update(0, solid_frame(RED), [detection()])
+    registry.record_plate(1, 0, reading("CF5775"))
+    registry.record_plate(1, 1, reading("CF5715"))
+
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert states[1].plate is None
+
+
+def test_a_plate_beaten_by_a_closer_reading_is_announced_as_a_correction():
+    registry = TrackRegistry(min_plate_score=1.5)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(2):
+        registry.record_plate(1, frame_index, reading("CF5795"))
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert [state.plate for state, _ in newly_confirmed(states)] == ["CF5795"]
+
+    for frame_index in range(2, 6):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+
+    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
+    assert [(state.plate, previous) for state, previous in newly_confirmed(states)] == [
+        ("CF5775", "CF5795")
+    ]
+
+
+def test_a_plate_that_keeps_winning_is_not_announced_again():
+    registry = TrackRegistry(min_plate_score=1.5)
+    registry.update(0, solid_frame(RED), [detection()])
+    for frame_index in range(2):
+        registry.record_plate(1, frame_index, reading("CF5775"))
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
+    newly_confirmed(states)
+
+    registry.record_plate(1, 3, reading("CF5775"))
+    states = registry.update(2, solid_frame(RED), [detection(shift=TRAVELLED)])
     assert newly_confirmed(states) == []
 
 
@@ -301,7 +423,7 @@ def test_a_frame_with_a_known_plate_passes_the_stream_filter():
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index in range(3):
         registry.record_plate(1, frame_index, reading("CF5775"))
-    states = registry.update(3, solid_frame(RED), [detection()])
+    states = registry.update(3, solid_frame(RED), [detection(shift=TRAVELLED)])
 
     assert carries_a_plate(states)
 
@@ -321,7 +443,7 @@ def test_a_vehicle_without_a_settled_plate_is_not_reported():
     registry = TrackRegistry(min_plate_score=2.0)
     registry.update(0, solid_frame(RED), [detection()])
     registry.record_plate(1, 0, reading("CF5775"))
-    states = registry.update(1, solid_frame(RED), [detection()])
+    states = registry.update(1, solid_frame(RED), [detection(shift=TRAVELLED)])
 
     assert newly_confirmed(states) == []
 

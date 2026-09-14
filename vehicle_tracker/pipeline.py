@@ -130,6 +130,11 @@ def run(config: Config) -> None:
 
 
 def report(states: dict[int, TrackState]) -> None:
-    for state in newly_confirmed(states):
+    for state, previous in newly_confirmed(states):
+        if previous is not None:
+            logger.info(
+                "vehicle %d: plate %s corrected to %s", state.track_id, previous, state.plate
+            )
+            continue
         color = state.color.name if state.color is not None else "unknown"
         logger.info("vehicle %d: %s, plate %s", state.track_id, color, state.plate)

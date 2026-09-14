@@ -34,14 +34,41 @@ PLATE_RETRY_GROWTH = 2.0
 # rejects every vehicle on a 480p camera, which is exactly the kind of source this runs on.
 MIN_VEHICLE_HEIGHT_FRACTION = 0.08
 
+# A vehicle travels through the scene and a road sign does not. The detector boxes a matrix
+# sign on the sample footage as a bus, and the identification number printed on its frame is
+# then read as a plate - crisply and identically on every frame, because the sign never moves,
+# so it outscores every real plate in the clip. Displacement is measured from where the track
+# was first seen rather than summed frame by frame, so box jitter cannot accumulate into
+# movement, and it is expressed against the vehicle's own height so that the same rule holds
+# at any distance. Measured on both clips: the false positives reach 0.03 of their height and
+# every vehicle that lives long enough to collect a plate reaches at least 0.27.
+MIN_DRIFT_FRACTION = 0.10
+
 # Plate reading is the one stage that can outgrow a frame's time budget, so a burst of
 # vehicles arriving together is served over several frames instead of all at once.
 MAX_PLATE_READS_PER_FRAME = 2
 
 # A single reading of a distant or motion blurred plate is close to a random guess, so a
 # plate is only reported once several frames agree on it, and retried until they strongly do.
-MIN_REPORTED_PLATE_SCORE = 2.0
+# Each vote is weighted by the recognizer's own confidence, which runs at 0.8 to 1.0 on a
+# readable plate, so this has to sit below twice that or two agreeing frames never clear it:
+# at 2.0 the one legible plate of the highway clip scored 1.87 and was never reported.
+MIN_REPORTED_PLATE_SCORE = 1.5
+
+# Two frames agreeing is not enough on its own, because the rival readings of a plate differ
+# from the winner by a single character and collect their own pairs. Measured on the dashcam
+# clip, where the followed car holds its plate at 40 pixels for six seconds: three wrong texts
+# reach a pair before the right one does, and each leads its nearest rival by at most 0.66,
+# while every text that turns out to be correct pulls at least 0.92 clear. A reading of a
+# legible plate scores 0.9 to 1.0, so this asks the winner to be one whole reading ahead.
+PLATE_LEAD = 0.9
+
 PLATE_CONFIDENT_SCORE = 5.0
+
+
+def center(bbox: tuple[int, int, int, int]) -> tuple[float, float]:
+    x1, y1, x2, y2 = bbox
+    return ((x1 + x2) / 2, (y1 + y2) / 2)
 
 
 @dataclass
@@ -49,14 +76,20 @@ class TrackState:
     track_id: int
     last_seen: int
     min_plate_score: float
+    min_plate_lead: float
     last_plate_frame: int
     plate_budget_height: int
+    first_center: tuple[float, float]
     color_votes: Counter[VehicleColor] = field(default_factory=Counter)
     last_color_frame: int | None = None
     plate_votes: dict[str, float] = field(default_factory=dict)
     plate_attempts: int = 0
-    # so that a confirmed plate is reported once and not on every frame the vehicle stays in
-    announced: bool = False
+    # the text this vehicle was last reported under, so that a plate is announced once and
+    # not on every frame the vehicle stays in view
+    announced_plate: str | None = None
+    # latched rather than recomputed per frame: a vehicle that stops at a barrier has still
+    # arrived under its own power, and its plate stays reportable while it waits
+    moved: bool = False
 
     @property
     def color(self) -> VehicleColor | None:
@@ -70,12 +103,21 @@ class TrackState:
 
     @property
     def plate(self) -> str | None:
-        if not self.plate_votes:
+        # whatever text a box that has never travelled carries, it is not a vehicle's plate
+        if not self.moved or not self.plate_votes:
             return None
         best = max(self.plate_votes, key=lambda text: self.plate_votes[text])
         if self.plate_votes[best] < self.min_plate_score:
             return None
+        if self.plate_votes[best] - self.runner_up_score < self.min_plate_lead:
+            return None
         return best
+
+    @property
+    def runner_up_score(self) -> float:
+        """The best score among the readings that are not currently winning."""
+        ranked = sorted(self.plate_votes.values(), reverse=True)
+        return ranked[1] if len(ranked) > 1 else 0.0
 
     @property
     def plate_score(self) -> float:
@@ -89,22 +131,32 @@ def carries_a_plate(states: dict[int, TrackState]) -> bool:
     return any(state.plate is not None for state in states.values())
 
 
-def newly_confirmed(states: dict[int, TrackState]) -> list[TrackState]:
-    """Vehicles whose plate has just been confirmed, each one returned only once."""
-    confirmed = []
+def newly_confirmed(states: dict[int, TrackState]) -> list[tuple[TrackState, str | None]]:
+    """Vehicles whose plate has just been confirmed, or has changed since it was announced.
+
+    The vote keeps improving while a vehicle approaches, so the text that first clears the
+    threshold can be beaten later by a reading taken from closer up. Each vehicle is returned
+    with the text it was last announced under, so a correction can be reported as a correction
+    rather than as a second vehicle.
+    """
+    announcements = []
     for state in states.values():
-        if state.plate is not None and not state.announced:
-            state.announced = True
-            confirmed.append(state)
-    return confirmed
+        plate = state.plate
+        if plate is None or plate == state.announced_plate:
+            continue
+        announcements.append((state, state.announced_plate))
+        state.announced_plate = plate
+    return announcements
 
 
 class TrackRegistry:
     """Accumulates what is known about each tracked vehicle.
 
-    Colour is a property of the vehicle, not of a single frame, so it is sampled on a
-    few frames per track and decided by majority vote. A blurred or shadowed frame then
-    costs one vote instead of changing the answer.
+    Colour and the plate are properties of the vehicle, not of a single frame, so both are
+    sampled on a few frames per track and decided by majority vote. A blurred or shadowed
+    frame then costs one vote instead of changing the answer. The registry also keeps track
+    of whether a box has ever travelled, because a plate is only credible on something that
+    moves through the scene.
     """
 
     def __init__(
@@ -119,7 +171,9 @@ class TrackRegistry:
         max_plate_reads_per_frame: int = MAX_PLATE_READS_PER_FRAME,
         confident_plate_score: float = PLATE_CONFIDENT_SCORE,
         min_plate_score: float = MIN_REPORTED_PLATE_SCORE,
+        min_plate_lead: float = PLATE_LEAD,
         retry_growth: float = PLATE_RETRY_GROWTH,
+        min_drift_fraction: float = MIN_DRIFT_FRACTION,
     ) -> None:
         self._states: dict[int, TrackState] = {}
         self._color_interval = color_interval
@@ -131,7 +185,9 @@ class TrackRegistry:
         self._max_plate_reads_per_frame = max_plate_reads_per_frame
         self._confident_plate_score = confident_plate_score
         self._min_plate_score = min_plate_score
+        self._min_plate_lead = min_plate_lead
         self._retry_growth = retry_growth
+        self._min_drift_fraction = min_drift_fraction
         self._frame_height = 0
         self._total_tracks = 0
 
@@ -158,12 +214,15 @@ class TrackRegistry:
                     track_id=detection.track_id,
                     last_seen=frame_index,
                     min_plate_score=self._min_plate_score,
+                    min_plate_lead=self._min_plate_lead,
                     last_plate_frame=self._staggered_start(detection.track_id, frame_index),
                     plate_budget_height=y2 - y1,
+                    first_center=center(detection.bbox),
                 )
                 self._states[detection.track_id] = state
                 self._total_tracks += 1
             state.last_seen = frame_index
+            self._note_movement(state, detection.bbox)
             self._renew_plate_budget(state, y2 - y1)
 
             if self._needs_color(state, frame_index):
@@ -188,6 +247,15 @@ class TrackRegistry:
 
         due.sort(key=lambda detection: self._states[detection.track_id].last_plate_frame)
         return due[: self._max_plate_reads_per_frame]
+
+    def _note_movement(self, state: TrackState, bbox: tuple[int, int, int, int]) -> None:
+        if state.moved:
+            return
+        x, y = center(bbox)
+        origin_x, origin_y = state.first_center
+        drift = max(abs(x - origin_x), abs(y - origin_y))
+        _, y1, _, y2 = bbox
+        state.moved = drift >= (y2 - y1) * self._min_drift_fraction
 
     def _renew_plate_budget(self, state: TrackState, height: int) -> None:
         if state.plate_attempts < self._max_plate_attempts:

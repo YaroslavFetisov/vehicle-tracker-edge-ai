@@ -25,8 +25,11 @@ def make_state(track_id: int, color: str) -> TrackState:
         track_id=track_id,
         last_seen=0,
         min_plate_score=2.0,
+        min_plate_lead=0.0,
         last_plate_frame=0,
         plate_budget_height=BOX[3] - BOX[1],
+        first_center=(0.0, 0.0),
+        moved=True,
     )
     state.color_votes[color_from_name(color)] += 1
     return state
