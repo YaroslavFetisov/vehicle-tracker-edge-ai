@@ -3,6 +3,7 @@
 .github/
 data/
 weights/
+out/
 tests/
 __pycache__/
 *.py[cod]

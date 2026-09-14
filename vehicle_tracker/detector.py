@@ -38,10 +38,6 @@ class VehicleDetector:
         self._model = YOLO(str(weights))
         logger.info("vehicle detector: %s on %s", weights.name, self._device)
 
-    @property
-    def device(self) -> str:
-        return self._device
-
     def track(self, frame: np.ndarray) -> list[Detection]:
         results = self._model.track(
             frame,

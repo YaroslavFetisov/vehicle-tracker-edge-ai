@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from vehicle_tracker.metrics import Metrics
 
 
@@ -40,11 +42,8 @@ def test_the_stage_context_manager_records_time():
 
 def test_a_failing_stage_is_still_recorded():
     metrics = Metrics()
-    try:
-        with metrics.stage("detect"):
-            raise RuntimeError("inference failed")
-    except RuntimeError:
-        pass
+    with pytest.raises(RuntimeError), metrics.stage("detect"):
+        raise RuntimeError("inference failed")
     metrics.frame_done(0.010, had_vehicles=True)
 
     assert "detect" in metrics.status_line()
