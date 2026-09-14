@@ -25,6 +25,9 @@ COPY scripts ./scripts
 # the models are baked in so the container also starts on a device that is already offline
 RUN python scripts/fetch_assets.py models
 
+# python as pid 1 ignores SIGTERM, so docker stop would kill it before the video file is closed
+STOPSIGNAL SIGINT
+
 # the image has no display, so runs need --no-display:
 #   docker run --rm -v "$PWD/data:/data" vehicle-tracker \
 #       --source /data/clip.mp4 --no-display --save-video /data/annotated.mp4
