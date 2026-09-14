@@ -2,12 +2,12 @@
 name = "vehicle-tracker-edge-ai"
 version = "0.1.0"
 description = "Real-time vehicle traffic analysis: tracking, license plate recognition and colour detection"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "AGPL-3.0-only"
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PTH", "C4"]
