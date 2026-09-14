@@ -13,60 +13,26 @@ COLOR_SAMPLE_INTERVAL = 5
 MAX_COLOR_SAMPLES = 15
 TRACK_EXPIRY_FRAMES = 90
 
-# Plates get easier to read as a vehicle approaches, so the fixed OCR budget per vehicle is
-# spread across the whole track rather than spent as fast as possible. Sampling every second
-# frame instead of every fifth exhausts the budget while the vehicle is still far away and
-# loses plates that a slower schedule reads correctly.
+# plates get easier to read as a vehicle approaches, so the budget is spread over the track
 PLATE_SAMPLE_INTERVAL = 5
 MAX_PLATE_ATTEMPTS = 40
 
-# A vehicle that has doubled in height gets a fresh allowance, because its plate has roughly
-# doubled in width too, and that is exactly the span over which the recognizer becomes usable:
-# characters are 13% correct between 20 and 39 pixels of plate width and 82% correct above it.
-# Without this a long lived track spends its whole budget while still far away - on the sample
-# clip a bus is in view for 377 frames and only becomes readable in the last 40 of them. A
-# smaller factor renews too early and wastes the new budget on frames that are still hopeless;
-# a larger one never triggers. A vehicle that does not approach never renews, so dense traffic
-# pays nothing for this.
+# twice the height means roughly twice the plate width, enough to go from unreadable to readable
 PLATE_RETRY_GROWTH = 2.0
 
-# Expressed against the frame rather than in pixels: an absolute threshold tuned at 1080p
-# rejects every vehicle on a 480p camera, which is exactly the kind of source this runs on.
+# relative to the frame, so the same value works for a 480p and a 1080p camera
 MIN_VEHICLE_HEIGHT_FRACTION = 0.08
 
-# A vehicle travels through the scene and a road sign does not. The detector boxes a matrix
-# sign on the sample footage as a bus, and the identification number printed on its frame is
-# then read as a plate - crisply and identically on every frame, because the sign never moves,
-# so it outscores every real plate in the clip. Displacement is measured from where the track
-# was first seen rather than summed frame by frame, so box jitter cannot accumulate into
-# movement, and it is expressed against the vehicle's own height so that the same rule holds
-# at any distance. Measured on both clips: the false positives reach 0.03 of their height and
-# every vehicle that lives long enough to collect a plate reaches at least 0.27.
+# a road sign detected as a bus carries crisp text too, but it never moves
 MIN_DRIFT_FRACTION = 0.10
 
-# Plate reading is the one stage that can outgrow a frame's time budget, so a burst of
-# vehicles arriving together is served over several frames instead of all at once.
 MAX_PLATE_READS_PER_FRAME = 2
 
-# A single reading of a distant or motion blurred plate is close to a random guess, so a
-# plate is only reported once several frames agree on it, and retried until they strongly do.
-# Each vote is weighted by the recognizer's own confidence, which runs at 0.8 to 1.0 on a
-# readable plate, so this has to sit below twice that or two agreeing frames never clear it:
-# at 2.0 the one legible plate of the highway clip scored 1.87 and was never reported.
+# votes are weighted by OCR confidence, a plate needs agreeing frames and a clear lead over
+# rival readings, which usually differ from it by a single character
 MIN_REPORTED_PLATE_SCORE = 1.5
-
-# Two frames agreeing is not enough on its own, because the rival readings of a plate differ
-# from the winner by a single character and collect their own pairs. Measured on the dashcam
-# clip, where the followed car holds its plate at 40 pixels for six seconds: three wrong texts
-# reach a pair before the right one does, and each leads its nearest rival by at most 0.66,
-# while every text that turns out to be correct pulls at least 0.92 clear. A reading of a
-# legible plate scores 0.9 to 1.0, so this asks the winner to be one whole reading ahead.
 PLATE_LEAD = 0.9
-
-# Stated outright rather than implied by the score: a local-format reading weighs 1.5 and the
-# recognizer does return a confidence of exactly 1.0, so one frame alone could clear the bar.
 MIN_AGREEING_READINGS = 2
-
 PLATE_CONFIDENT_SCORE = 5.0
 
 
@@ -90,11 +56,8 @@ class TrackState:
     plate_votes: dict[str, float] = field(default_factory=dict)
     plate_hits: Counter[str] = field(default_factory=Counter)
     plate_attempts: int = 0
-    # the text this vehicle was last reported under, so that a plate is announced once and
-    # not on every frame the vehicle stays in view
     announced_plate: str | None = None
-    # latched rather than recomputed per frame: a vehicle that stops at a barrier has still
-    # arrived under its own power, and its plate stays reportable while it waits
+    # latched, so a car waiting at a barrier keeps its plate
     moved: bool = False
 
     @property
@@ -109,7 +72,6 @@ class TrackState:
 
     @property
     def plate(self) -> str | None:
-        # whatever text a box that has never travelled carries, it is not a vehicle's plate
         if not self.moved or not self.plate_votes:
             return None
         best = max(self.plate_votes, key=lambda text: self.plate_votes[text])
@@ -140,13 +102,7 @@ def carries_a_plate(states: dict[int, TrackState]) -> bool:
 
 
 def newly_confirmed(states: dict[int, TrackState]) -> list[tuple[TrackState, str | None]]:
-    """Vehicles whose plate has just been confirmed, or has changed since it was announced.
-
-    The vote keeps improving while a vehicle approaches, so the text that first clears the
-    threshold can be beaten later by a reading taken from closer up. Each vehicle is returned
-    with the text it was last announced under, so a correction can be reported as a correction
-    rather than as a second vehicle.
-    """
+    """Vehicles whose plate was just confirmed or changed, with the text announced before."""
     announcements = []
     for state in states.values():
         plate = state.plate
@@ -158,14 +114,7 @@ def newly_confirmed(states: dict[int, TrackState]) -> list[tuple[TrackState, str
 
 
 class TrackRegistry:
-    """Accumulates what is known about each tracked vehicle.
-
-    Colour and the plate are properties of the vehicle, not of a single frame, so both are
-    sampled on a few frames per track and decided by majority vote. A blurred or shadowed
-    frame then costs one vote instead of changing the answer. The registry also keeps track
-    of whether a box has ever travelled, because a plate is only credible on something that
-    moves through the scene.
-    """
+    """Colour and plate belong to the vehicle, not the frame, so both are voted on per track."""
 
     def __init__(
         self,
@@ -277,8 +226,7 @@ class TrackRegistry:
         state.plate_budget_height = height
 
     def _staggered_start(self, track_id: int, frame_index: int) -> int:
-        # vehicles entering the scene together would otherwise queue their first pass on
-        # the same frame and then stay in lockstep for as long as they are tracked
+        # otherwise vehicles that appear together are read on the same frames for good
         return frame_index + track_id % self._plate_interval - self._plate_interval
 
     def record_plate(self, track_id: int, frame_index: int, reading: PlateReading | None) -> None:
@@ -313,7 +261,6 @@ class TrackRegistry:
         return frame_index - state.last_color_frame >= self._color_interval
 
     def _expire(self, frame_index: int) -> None:
-        # a stream can run for days, so vehicles that left the scene must not pile up
         stale = [
             track_id
             for track_id, state in self._states.items()

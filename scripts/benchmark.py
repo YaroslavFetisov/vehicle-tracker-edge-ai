@@ -34,8 +34,7 @@ from vehicle_tracker.video_source import VideoSource
 WARMUP_FRAMES = 20
 DEFAULT_FRAMES = 400
 
-# The per track cache switched off: colour and the plate are recomputed for every vehicle on
-# every frame, which is the naive implementation the cache has to justify itself against.
+# the naive baseline: colour and plate recomputed for every vehicle on every frame
 UNCACHED_POLICY = {
     "color_interval": 1,
     "max_color_samples": sys.maxsize,

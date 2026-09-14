@@ -15,20 +15,15 @@ from vehicle_tracker.runtime import plate_model_threads, providers_for
 
 logger = logging.getLogger(__name__)
 
-# Measured on the sample footage: 384 detects plates on 92% of vehicle crops against 84%
-# at 256 and 72% at 640. A larger input is worse, not better, because upscaling a small
-# crop adds no detail while moving it away from the scale the model was trained on.
+# input sizes and model variants were picked on the sample footage, see README
 DETECTION_MODEL = "yolo-v9-t-384-license-plate-end2end"
-
-# cct-xs matches the accuracy of the larger cct-s on this footage at a sixth of the cost.
 OCR_MODEL = "cct-xs-v2-global-model"
 
-# Below this width the recognizer returns confident nonsense, so size is the only
-# usable filter: at 40 px and above characters are 82% correct, below 40 px almost none.
+# below this the recognizer returns confident nonsense
 MIN_PLATE_WIDTH = 40
 MIN_PLATE_HEIGHT = 10
 
-# both plate models emit harmless shape-inference warnings on every session start
+# hides the shape inference warnings both models print on every start
 ONNX_ERROR_SEVERITY = 3
 
 NEUTRAL_OCR_CONFIDENCE = 1.0
@@ -39,8 +34,7 @@ ALLOW_SPINNING = "session.intra_op.allow_spinning"
 def session_options() -> onnxruntime.SessionOptions:
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = plate_model_threads(os.cpu_count())
-    # pool threads busy-wait after every run by default, taking the cores the detector needs:
-    # on four cores 5.2 fps with spinning and 13.9 without, reading the same plates
+    # idle threads busy-wait by default and take cores away from the detector
     options.add_session_config_entry(ALLOW_SPINNING, "0")
     return options
 
@@ -48,8 +42,7 @@ def session_options() -> onnxruntime.SessionOptions:
 class PlateReader:
     def __init__(self, *, device: str = "auto") -> None:
         onnxruntime.set_default_logger_severity(ONNX_ERROR_SEVERITY)
-        # the severity above also hides the runtime's own fallback warning, so the one
-        # case that matters - asking for a GPU and silently getting a CPU - is checked here
+        # the severity above also hides the runtime's own warning about falling back to the CPU
         if (
             device == "cuda"
             and "CUDAExecutionProvider" not in onnxruntime.get_available_providers()
@@ -108,6 +101,5 @@ def confidence_of(prediction: Any, length: int) -> float:
     probabilities = prediction.char_probs
     if probabilities is None:
         return NEUTRAL_OCR_CONFIDENCE
-    # The model scores every plate slot it has, and the unused trailing slots come back at
-    # 1.0, so averaging all of them rates a short reading higher than a long correct one.
+    # unused trailing slots score 1.0 and would inflate short readings
     return float(np.mean(probabilities[:length]))

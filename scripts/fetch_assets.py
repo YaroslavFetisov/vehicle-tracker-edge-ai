@@ -29,8 +29,7 @@ SAMPLE_VIDEOS = {
     ),
 }
 
-# OpenALPR end to end benchmark: vehicle photos with the plate text as ground truth, used by
-# scripts/eval_ocr.py. Only the european half is fetched, the repository itself is ~190 MB.
+# OpenALPR end to end benchmark for scripts/eval_ocr.py, european part only
 OCR_BENCHMARK_DIR = DATA_DIR / "openalpr-eu"
 OCR_BENCHMARK_LISTING = "https://api.github.com/repos/openalpr/benchmarks/contents/endtoend/eu"
 
@@ -81,8 +80,7 @@ def fetch_detection_weights() -> None:
 
 
 def fetch_plate_models() -> None:
-    # the plate detector and the recognizer pull their own weights from a model hub on
-    # first use, which would otherwise happen on an edge device that is already offline
+    # both models otherwise download themselves on first use, possibly on an offline device
     sys.path.insert(0, str(PROJECT_ROOT))
     from vehicle_tracker.plate_reader import PlateReader
 

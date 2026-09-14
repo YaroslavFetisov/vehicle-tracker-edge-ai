@@ -11,8 +11,7 @@ DIGIT = re.compile(r"\d")
 MIN_PLATE_LENGTH = 4
 MAX_PLATE_LENGTH = 10
 
-# A reading in the local plate format is more likely to be right than one that is not,
-# but foreign vehicles are read here too, so the format only weights the vote.
+# foreign vehicles are read too, so the local format only weights the vote
 LOCAL_FORMAT_WEIGHT = 1.5
 FOREIGN_FORMAT_WEIGHT = 1.0
 
@@ -27,8 +26,7 @@ def normalize(text: str) -> str | None:
     cleaned = NON_PLATE_CHARACTERS.sub("", text.upper())
     if not MIN_PLATE_LENGTH <= len(cleaned) <= MAX_PLATE_LENGTH:
         return None
-    # Plates in the target region mix letters and digits. A run of one kind is the
-    # recognizer hallucinating on a badge or a dealer frame rather than reading a plate.
+    # letters only or digits only is a badge or a dealer frame, not a plate
     if not (LETTER.search(cleaned) and DIGIT.search(cleaned)):
         return None
     return cleaned

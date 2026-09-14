@@ -8,8 +8,7 @@ from pathlib import Path
 STREAM_SCHEMES = ("rtsp://", "rtmp://", "http://", "https://")
 
 DEFAULT_WEIGHTS = Path("weights/yolo11n.pt")
-# below 0.5 the detector starts flickering on distant vehicles and roadside furniture,
-# which fragments tracks into short lived ids - see the measurements in README.md
+# lower values let distant vehicles and roadside objects flicker into short lived ids
 DEFAULT_CONFIDENCE = 0.5
 DEFAULT_IMAGE_SIZE = 640
 

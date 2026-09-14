@@ -6,8 +6,7 @@ from dataclasses import dataclass
 # OpenALPR annotation line: image name, plate box (x, y, width, height), plate text
 ANNOTATION_FIELDS = 6
 
-# Plate fonts make these pairs nearly identical and the benchmark labels are not consistent
-# about them, so accuracy is reported both strictly and with the pairs folded together.
+# nearly identical in plate fonts and labelled inconsistently, so also scored folded
 AMBIGUOUS_CHARACTERS = str.maketrans({"O": "0", "I": "1"})
 
 
@@ -48,8 +47,7 @@ def edit_distance(expected: str, actual: str) -> int:
 
 def closest(expected: list[str], actual: str | None) -> str:
     """Pick the labelled plate a reading should be scored against."""
-    # an image may carry several labelled plates while the reader returns one, so the
-    # reading is scored against the plate it is closest to, not against whichever came first
+    # an image can carry several labelled plates while the reader returns one
     if actual is None or len(expected) == 1:
         return expected[0]
     return min(expected, key=lambda plate: edit_distance(plate, actual))
@@ -91,8 +89,7 @@ class OcrScore:
     def add(self, expected: str, actual: str | None) -> None:
         self.images += 1
         self.characters += len(expected)
-        # a plate that was never read is charged every character of the expected text,
-        # otherwise skipping the hard images would look like accuracy
+        # a missed plate costs every character, or skipping hard images would look accurate
         if actual is None:
             self.character_errors += len(expected)
             return

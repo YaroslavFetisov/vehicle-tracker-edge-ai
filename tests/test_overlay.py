@@ -80,8 +80,7 @@ def test_nearer_vehicles_are_drawn_over_distant_ones():
     # the nearer vehicle is passed first, so list order alone would draw it underneath
     draw_detections(frame, [near, far], states)
 
-    # Both labels cover this point, so it shows which of them was drawn last. The blue
-    # channel separates the white label from the red one even under the antialiased text.
+    # both labels cover this point; the blue channel tells the white label from the red one
     blue = int(frame[30, 60][0])
     assert blue > 200, "the distant vehicle's label was drawn over the nearer one"
 

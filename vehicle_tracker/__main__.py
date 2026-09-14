@@ -17,8 +17,7 @@ def main() -> None:
     try:
         run(parse_args())
     except RuntimeError as exc:
-        # losing a camera for good is an operating condition, not a defect in the program:
-        # it deserves one clear line and a non zero exit code, not a stack trace
+        # a lost camera is an operating condition: one error line and a non zero exit code
         logger.error("%s", exc)
         raise SystemExit(1) from exc
 

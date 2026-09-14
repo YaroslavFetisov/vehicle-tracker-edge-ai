@@ -31,8 +31,7 @@ def draw_detections(
     states: dict[int, TrackState],
 ) -> None:
     """Annotates the frame in place."""
-    # labels are wider than a distant vehicle's box and would overwrite each other in
-    # traffic, so the nearest vehicles are drawn last and stay readable
+    # nearest vehicles last, so their labels stay readable in traffic
     for detection in sorted(detections, key=box_area):
         state = states.get(detection.track_id)
         color = state.color if state is not None else None
@@ -68,8 +67,7 @@ def draw_label(
     (text_width, text_height), _ = cv2.getTextSize(text, FONT, FONT_SCALE, FONT_THICKNESS)
     box_width = text_width + 2 * LABEL_PADDING
     box_height = text_height + 2 * LABEL_PADDING
-    # a label is wider than the box of a vehicle at the edge of the frame, and the plate
-    # is at the end of it, so the label slides inwards rather than being clipped away
+    # keep the label inside the frame, the plate at its end must not be clipped
     x = max(min(x, frame.shape[1] - box_width), 0)
     top = max(y - box_height, 0)
     cv2.rectangle(frame, (x, top), (x + box_width, top + box_height), background, cv2.FILLED)

@@ -30,7 +30,7 @@ def detection(track_id: int = 1, shift: int = 0) -> Detection:
     )
 
 
-# BBOX is 120 pixels tall, so a tenth of its height is twelve and this clears the bar
+# more than a tenth of the 120 pixel BBOX height
 TRAVELLED = 20
 
 
@@ -281,8 +281,7 @@ def test_a_plate_is_reported_once_frames_agree():
 
 
 def test_a_box_that_never_travels_reports_no_plate():
-    # the identification number on a road sign reads perfectly on every frame, so without
-    # this the only plate the highway clip yields is street furniture
+    # the number on a road sign reads perfectly on every frame because the sign never moves
     registry = TrackRegistry()
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index in range(4):
@@ -361,7 +360,7 @@ def test_a_confirmed_plate_is_reported_once_and_not_again():
 
 
 def test_one_crisp_reading_in_the_local_format_is_still_only_one_frame():
-    # 1.5 for the format times a confidence of exactly 1.0 used to clear the score on its own
+    # local format weight 1.5 times confidence 1.0 clears the score on its own
     registry = TrackRegistry()
     registry.update(0, solid_frame(RED), [detection()])
     registry.record_plate(1, 0, reading("AA1234BB", confidence=1.0))
@@ -376,8 +375,7 @@ def test_one_crisp_reading_in_the_local_format_is_still_only_one_frame():
 
 
 def test_a_winner_that_a_rival_is_shadowing_is_not_reported():
-    # the rival readings of a plate differ from the winner by one character, so a pair of
-    # agreeing frames means nothing while another text is holding a pair of its own
+    # rival readings differ by one character and collect pairs of their own
     registry = TrackRegistry(min_plate_score=1.5, min_plate_lead=0.9)
     registry.update(0, solid_frame(RED), [detection()])
     for frame_index, text in enumerate(["CF5775", "CF5775", "CF5715", "CF5715"]):

@@ -18,8 +18,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RET", "PTH", "C4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# a bare pytest, as CI runs it, does not put the project root on sys.path the way
-# python -m pytest does
+# a bare pytest, as in CI, does not add the project root to sys.path
 pythonpath = ["."]
 markers = [
     "integration: requires model weights and sample footage, skipped when they are absent",

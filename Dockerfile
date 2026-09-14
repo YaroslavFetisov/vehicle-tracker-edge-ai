@@ -1,5 +1,4 @@
-# CPU image. The plate models are ONNX and run on the CPU in any case, and an image that
-# runs anywhere is worth more here than one tied to a particular CUDA driver.
+# CPU image: the plate models run on the CPU anyway, and no CUDA driver is required
 FROM python:3.13-slim
 
 # the CPU build of torch is a fraction of the size of the default one, which ships CUDA
@@ -16,8 +15,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY requirements.txt ./
-# opencv-python and opencv-python-headless both provide cv2 and must not be installed side
-# by side; this image has no display, so the headless build is the one that belongs here
+# both opencv packages provide cv2; without a display the headless one belongs here
 RUN sed '/^opencv-python==/d' requirements.txt > requirements-image.txt \
  && pip install -r requirements-image.txt opencv-python-headless==5.0.0.93
 

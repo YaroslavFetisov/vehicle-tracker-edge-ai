@@ -17,10 +17,7 @@ MAX_RECONNECT_DELAY = 8.0
 MAX_RECONNECT_ATTEMPTS = 5
 WAIT_TIMEOUT = 0.1
 
-# A camera that stops sending has to be noticed in seconds rather than whenever the backend
-# decides to give up on its own: measured against a real rtsp source, the default took eight
-# seconds to report a dead stream, and a connection that stalls without closing can take far
-# longer than that.
+# without explicit timeouts a stalled stream can hang far longer than a camera should
 OPEN_TIMEOUT_MS = 5000
 READ_TIMEOUT_MS = 5000
 
@@ -39,10 +36,8 @@ def is_network_source(source: str | int) -> bool:
 class VideoSource:
     """Reads frames in a background thread.
 
-    Live streams keep only the newest frame: a camera that outruns inference would
-    otherwise build an ever growing backlog and the displayed frame would drift
-    further into the past. File sources keep every frame instead, so repeated runs
-    stay reproducible and benchmark numbers remain comparable.
+    Streams keep only the newest frame so a slow pipeline never falls behind the camera;
+    files keep every frame so runs are reproducible.
     """
 
     def __init__(

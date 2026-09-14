@@ -5,9 +5,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-# The body panel is sampled instead of the whole box: the upper part of a vehicle is glass
-# reflecting the sky, and the bottom edge is road surface. The band reaches lower than the
-# windows suggest, because the body of a bus or a van sits below where a car's does.
+# body panel only: glass above reflects the sky, the road shows below
 SAMPLE_LEFT = 0.25
 SAMPLE_RIGHT = 0.75
 SAMPLE_TOP = 0.40
@@ -18,15 +16,11 @@ HUE_RANGE = 180
 HUE_SMOOTHING = 10
 
 ACHROMATIC_SATURATION = 60
-# Raised from 70 after measuring on labelled vehicles: dark paint keeps enough saturation to
-# be read as a hue, so cars that are plainly black came out blue. Below this brightness the
-# colour of a vehicle is not recoverable and black is the honest answer. Higher still starts
-# calling a yellow machine black, which is why the threshold sits here.
+# dark paint still has saturation, and below this black cars come out blue
 BLACK_VALUE = 110
 WHITE_VALUE = 175
 
-# Cyan, purple and magenta are not production car colours: such readings come from dark
-# red paint under a blue sky rather than from the vehicle, so they fold into blue and red.
+# cyan and magenta readings come from sky reflections on dark paint, so they fold into blue and red
 HUE_NAMES = (
     (8, "red"),
     (20, "orange"),
@@ -77,9 +71,7 @@ def sample_patch(frame: np.ndarray, bbox: tuple[int, int, int, int]) -> np.ndarr
 
 def dominant_hue(hues: np.ndarray) -> int:
     counts = np.bincount(hues.ravel(), minlength=HUE_RANGE).astype(np.float64)
-    # Hue wraps around, so the histogram is smoothed with a window that wraps too.
-    # The window is triangular rather than flat: a flat one leaves plateaus of equal
-    # value around a peak, and argmax then reports their left edge instead of the peak.
+    # hue wraps around; a flat window would leave plateaus and argmax would pick their edge
     offsets = np.arange(-HUE_SMOOTHING, HUE_SMOOTHING + 1)
     weights = HUE_SMOOTHING + 1 - np.abs(offsets)
     smoothed = sum(

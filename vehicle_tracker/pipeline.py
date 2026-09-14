@@ -24,11 +24,7 @@ QUIT_KEYS = (ord("q"), 27)
 
 
 class Pipeline:
-    """Runs every stage on one frame and annotates it in place.
-
-    Kept separate from the display loop so that the benchmark measures the same code that
-    the application runs, rather than a copy of it that can drift.
-    """
+    """Runs every stage on one frame; shared by the application and the benchmark."""
 
     def __init__(
         self,
@@ -47,8 +43,7 @@ class Pipeline:
         with self._metrics.stage("detect"):
             detections = self._detector.track(frame)
 
-        # nothing found means nothing to analyse: the remaining stages are the expensive
-        # ones, and a frame without vehicles never reaches them
+        # the remaining stages are the expensive ones
         if not detections:
             return {}
 
@@ -84,8 +79,7 @@ def build_pipeline(config: Config, *, registry: TrackRegistry, metrics: Metrics)
 
 
 def run(config: Config) -> None:
-    # checked before the models load, so that a headless opencv costs a second rather than
-    # the whole start up and an assertion from inside the first imshow
+    # before the models load, so a headless opencv fails in a second instead of on imshow
     if config.display and gui_is_missing(cv2.getBuildInformation()):
         raise RuntimeError(
             "this opencv build cannot open a window: the plate model packages depend on "
@@ -108,8 +102,7 @@ def run(config: Config) -> None:
                 states = pipeline.process(frame_index, frame)
                 report(states)
 
-                # the optional stream filter: a frame that carries no vehicle with a
-                # readable plate is analysed but never shown or stored
+                # stream filter: frames without a known plate are analysed but not shown
                 if not config.filter_stream or carries_a_plate(states):
                     kept += 1
                     draw_status(frame, metrics.status_line())
@@ -126,8 +119,7 @@ def run(config: Config) -> None:
         # the usual way to stop a container, and the output file still has to be closed
         logger.info("interrupted")
     finally:
-        # also runs when the stream is lost for good, so a failed run still reports what it
-        # saw and leaves a playable file behind rather than only a stack trace
+        # also runs when the stream is lost, so the summary is printed and the file closed
         if writer is not None:
             writer.close()
         if config.display:

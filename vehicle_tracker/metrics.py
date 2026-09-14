@@ -21,12 +21,7 @@ class Stage:
 
 
 class Metrics:
-    """Wall clock accounting for the pipeline stages.
-
-    Per call and per frame are different questions here: plate reading is expensive per
-    call but runs on a fraction of the frames, so only the per frame column says what it
-    actually costs the stream.
-    """
+    """Wall clock time per stage, per call and per frame, since plate reading skips most frames."""
 
     def __init__(self, smoothing: float = FPS_SMOOTHING) -> None:
         self._smoothing = smoothing
@@ -101,8 +96,7 @@ class Metrics:
         return f"{self._fps:.0f} fps   {stages}"
 
     def summary(self) -> list[str]:
-        # A camera that never opened has nothing to account for, and a table of zeroes
-        # printed above the error that ended the run only buries it.
+        # a table of zeroes above the error of a camera that never opened only buries the error
         if self._frames == 0:
             return ["no frames processed"]
 

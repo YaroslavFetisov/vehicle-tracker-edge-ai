@@ -54,8 +54,7 @@ def test_only_the_body_band_is_sampled():
 
 
 def test_dark_paint_reads_as_black_rather_than_as_its_hue():
-    # dark blue paint keeps enough saturation to be classified by hue, and a car that is
-    # plainly black then comes out blue
+    # dark blue paint keeps enough saturation to be read as a hue
     color = estimate_color(solid_frame((100, 40, 35)), BBOX)
     assert color is not None
     assert color.name == "black"
