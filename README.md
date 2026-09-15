@@ -9,8 +9,7 @@ a box in that colour with the plate next to it.
 ![Dense traffic clip: eight vehicles tracked, plate KE15NCC read](docs/dense_traffic.jpg)
 
 The second frame also shows the weakest part: the silver cars (IDs 52 and 42) are labelled
-`white`.
-See [Limitations](#limitations).
+`white`. See [Limitations](#limitations).
 
 ## Task coverage
 
@@ -34,7 +33,6 @@ colour, see [Limitations](#limitations).
 ## Contents
 
 - [Task coverage](#task-coverage)
-
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Results](#results)
